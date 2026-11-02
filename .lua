@@ -1,7 +1,4 @@
 --// MULTI-ZONE AUTO MINER V20
---// Auto Buy Selected Miners - 10 Second Cycles
---// Original V18 Mining Features
---// Real Executor
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -12,28 +9,21 @@ local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 local ZonesFolder = workspace:WaitForChild("Zones")
 
---==================================================
--- SETTINGS
---==================================================
+local MINING_INTERVAL = 0.01
+local TELEPORT_RETRY_DELAY = 0.75
+local TELEPORT_SUCCESS_DISTANCE = 5
+local TELEPORT_SETTLE_DELAY = 0.15
+local ORE_CLEARANCE = 1
 
-local MINING_INTERVAL = 0.1
-local TELEPORT_RETRY_DELAY = 2.5
-local TELEPORT_SUCCESS_DISTANCE = 18
-
-local NEXT_ROCK_DELAY = 0.2
+local NEXT_ROCK_DELAY = 0.3
 local SCAN_DELAY = 0.4
 local RESCAN_INTERVAL = 2
 local ERROR_RETRY_DELAY = 1
-
-local NO_DAMAGE_TIMEOUT = 0.5
+local NO_DAMAGE_TIMEOUT = 0.4
 local SKIP_DURATION = 3
 
-local AUTO_BUY_INTERVAL = 0.5
+local AUTO_BUY_INTERVAL = 0.1
 local CRAFT_REQUEST_DELAY = 0.5
-
---==================================================
--- MINER CATALOGUE
---==================================================
 
 local MinerNames = {
     "StoneMiner",
@@ -67,20 +57,12 @@ local MinerNames = {
 
 local selectedMiners = {}
 
---==================================================
--- THEME
---==================================================
-
 local BLACK = Color3.fromRGB(5, 5, 5)
 local PANEL = Color3.fromRGB(14, 14, 14)
 local PANEL2 = Color3.fromRGB(22, 22, 22)
 local WHITE = Color3.fromRGB(255, 255, 255)
 local GREY = Color3.fromRGB(155, 155, 155)
 local DARK_GREY = Color3.fromRGB(65, 65, 65)
-
---==================================================
--- ZONES
---==================================================
 
 local zoneOrder = {
     {"Mine1", "Starter Mine"},
@@ -105,10 +87,6 @@ local zoneOrder = {
     {"Genesis", "Genesis Core"},
     {"Crypt", "Haunted Crypt"}
 }
-
---==================================================
--- STATE
---==================================================
 
 local RUNNING = false
 local UNLOADED = false
@@ -138,10 +116,6 @@ local selectorExpanded = true
 local guiMinimized = false
 
 local MineRemote = nil
-
---==================================================
--- CONFIGURATION
---==================================================
 
 local CONFIG_FILE = "MultiZoneMinerV20.json"
 
@@ -209,10 +183,6 @@ if type(savedConfig.SelectedMiners) == "table" then
     end
 end
 
---==================================================
--- DETECT ZONES
---==================================================
-
 for _, entry in ipairs(zoneOrder) do
     local zone = ZonesFolder:FindFirstChild(entry[1])
 
@@ -263,10 +233,6 @@ local function getDisplayName(name)
     return tostring(name or "Unknown")
 end
 
---==================================================
--- REMOVE OLD GUI
---==================================================
-
 local old = PlayerGui:FindFirstChild("MultiZoneMinerV20")
 if old then
     old:Destroy()
@@ -276,10 +242,6 @@ local oldV19 = PlayerGui:FindFirstChild("MultiZoneMinerV19")
 if oldV19 then
     oldV19:Destroy()
 end
-
---==================================================
--- GUI HELPERS
---==================================================
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "MultiZoneMinerV20"
@@ -344,10 +306,6 @@ local function addHover(button, normalColor, hoverColor, outline)
     end)
 end
 
---==================================================
--- MAIN WINDOW
---==================================================
-
 local main = Instance.new("Frame")
 main.Name = "Main"
 main.Size = UDim2.fromOffset(290, 310)
@@ -388,10 +346,6 @@ main:GetPropertyChangedSignal("Position"):Connect(function()
 
     queueSave()
 end)
-
---==================================================
--- TITLE BAR
---==================================================
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -145, 0, 30)
@@ -447,10 +401,6 @@ addHover(minimize, PANEL2, Color3.fromRGB(48, 48, 48), minimizeStroke)
 addHover(close, PANEL2, Color3.fromRGB(65, 65, 65), closeStroke)
 addHover(minersOpenButton, PANEL2, Color3.fromRGB(48, 48, 48), minersOpenStroke)
 
---==================================================
--- STATUS
---==================================================
-
 local status = Instance.new("TextLabel")
 status.Size = UDim2.new(1, -20, 0, 19)
 status.Position = UDim2.fromOffset(10, 35)
@@ -483,10 +433,6 @@ end
 Players.PlayerAdded:Connect(updatePlayerCount)
 Players.PlayerRemoving:Connect(updatePlayerCount)
 updatePlayerCount()
-
---==================================================
--- ZONE SELECTOR
---==================================================
 
 local zoneToggle = Instance.new("TextButton")
 zoneToggle.Size = UDim2.new(1, -20, 0, 23)
@@ -577,10 +523,6 @@ rockInfo.Font = Enum.Font.Gotham
 rockInfo.TextXAlignment = Enum.TextXAlignment.Left
 rockInfo.Parent = main
 
---==================================================
--- MINING BUTTONS
---==================================================
-
 local function makeButton(text, x, color)
     local button = Instance.new("TextButton")
     button.Size = UDim2.fromOffset(130, 32)
@@ -613,10 +555,6 @@ local stopButton, stopStroke = makeButton(
 
 addHover(startButton, Color3.fromRGB(28, 28, 28), Color3.fromRGB(65, 65, 65), startStroke)
 addHover(stopButton, Color3.fromRGB(28, 28, 28), Color3.fromRGB(65, 65, 65), stopStroke)
-
---==================================================
--- MINER SELECTION WINDOW
---==================================================
 
 local minerWindow = Instance.new("Frame")
 minerWindow.Name = "MinerSelection"
@@ -711,10 +649,6 @@ minerLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     )
 end)
 
---==================================================
--- MINER COUNT AND ROWS
---==================================================
-
 local function getSelectedMinerCount()
     local count = 0
 
@@ -776,10 +710,6 @@ for index, name in ipairs(MinerNames) do
     end)
 end
 
---==================================================
--- SELECT ALL / DESELECT ALL
---==================================================
-
 local selectAllButton = Instance.new("TextButton")
 selectAllButton.Size = UDim2.fromOffset(115, 25)
 selectAllButton.Position = UDim2.fromOffset(10, 320)
@@ -826,10 +756,6 @@ deselectAllButton.MouseButton1Click:Connect(function()
     queueSave()
 end)
 
---==================================================
--- AUTO BUY CONTROLS
---==================================================
-
 local purchaseStatus = Instance.new("TextLabel")
 purchaseStatus.Size = UDim2.new(1, -20, 0, 17)
 purchaseStatus.Position = UDim2.fromOffset(10, 348)
@@ -870,10 +796,6 @@ corner(stopBuyButton, 6)
 local stopBuyStroke = stroke(stopBuyButton, WHITE, 1, 0.7)
 addHover(stopBuyButton, PANEL2, Color3.fromRGB(65, 65, 65), stopBuyStroke)
 
---==================================================
--- AUTO BUY HELPERS
---==================================================
-
 local function setPurchaseStatus(message)
     if not UNLOADED and purchaseStatus.Parent then
         purchaseStatus.Text = tostring(message)
@@ -901,10 +823,6 @@ local function updateAutoBuyButton()
         autoBuyButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
     end
 end
-
---==================================================
--- AUTO BUY WORKER
---==================================================
 
 local function autoBuyWorker(mySession)
     local craftRemote = getCraftRemote()
@@ -985,7 +903,6 @@ local function autoBuyWorker(mySession)
                 .. " FAILED"
             )
 
-            -- Wait until 10 seconds have passed since this cycle began.
             local remaining = AUTO_BUY_INTERVAL - (os.clock() - cycleStart)
 
             if remaining > 0 then
@@ -1065,10 +982,6 @@ minerClose.MouseButton1Click:Connect(function()
     minerWindow.Visible = false
 end)
 
---==================================================
--- STATUS HELPERS
---==================================================
-
 local function setStatus(message)
     if UNLOADED or not status or not status.Parent then
         return
@@ -1076,10 +989,6 @@ local function setStatus(message)
 
     status.Text = "● " .. tostring(message)
 end
-
---==================================================
--- ZONE SELECTION
---==================================================
 
 local function updateSelection()
     selectedLabel.Text = "ZONE: " .. getDisplayName(selectedZone)
@@ -1173,10 +1082,6 @@ end
 updateSelection()
 search:GetPropertyChangedSignal("Text"):Connect(refreshZoneSearch)
 
---==================================================
--- ROCK HELPERS
---==================================================
-
 local function getRocksFolder(zoneName)
     local zone = ZonesFolder:FindFirstChild(zoneName)
     return zone and zone:FindFirstChild("Rocks")
@@ -1189,6 +1094,30 @@ local function getRockPart(rock)
 
     return rock.PrimaryPart
         or rock:FindFirstChildWhichIsA("BasePart", true)
+end
+
+-- Dynamic position: one stud above the ore's actual top surface.
+local function getPositionAboveOre(rock, root)
+    if not rock or not root then
+        return nil
+    end
+
+    local success, boxCFrame, boxSize = pcall(function()
+        return rock:GetBoundingBox()
+    end)
+
+    if not success or not boxCFrame or not boxSize then
+        return nil
+    end
+
+    local oreTopY = boxCFrame.Position.Y + (boxSize.Y / 2)
+    local rootHalfHeight = root.Size.Y / 2
+
+    return Vector3.new(
+        boxCFrame.Position.X,
+        oreTopY + rootHalfHeight + ORE_CLEARANCE,
+        boxCFrame.Position.Z
+    )
 end
 
 local function validRock(rock, zoneName)
@@ -1205,35 +1134,6 @@ local function validRock(rock, zoneName)
     local hp = rock:GetAttribute("HP")
     return typeof(hp) == "number" and hp > 0
 end
-
-local function findRock(zoneName)
-    local folder = getRocksFolder(zoneName)
-
-    if not folder then
-        return nil
-    end
-
-    local bestRock = nil
-    local lowestHP = math.huge
-
-    for _, rock in ipairs(folder:GetChildren()) do
-        if validRock(rock, zoneName) then
-            local hp = rock:GetAttribute("HP")
-            local skipUntil = skippedRocks[rock] or 0
-
-            if os.clock() >= skipUntil and hp < lowestHP then
-                lowestHP = hp
-                bestRock = rock
-            end
-        end
-    end
-
-    return bestRock
-end
-
---==================================================
--- CHARACTER HELPERS
---==================================================
 
 local function getCharacterParts()
     local character = Player.Character
@@ -1252,13 +1152,47 @@ local function getCharacterParts()
     return humanoid, root
 end
 
-local function getDistance(root, part)
-    return (root.Position - part.Position).Magnitude
-end
+local function findRock(zoneName)
+    local folder = getRocksFolder(zoneName)
 
---==================================================
--- PERIODIC SCAN
---==================================================
+    if not folder then
+        return nil
+    end
+
+    local _, root = getCharacterParts()
+    local nearestLucky = nil
+    local nearestNormal = nil
+    local luckyDistance = math.huge
+    local normalDistance = math.huge
+
+    for _, rock in ipairs(folder:GetChildren()) do
+        if validRock(rock, zoneName) then
+            local skipUntil = skippedRocks[rock] or 0
+
+            if os.clock() >= skipUntil then
+                local part = getRockPart(rock)
+
+                if part then
+                    local distance = root
+                        and (root.Position - part.Position).Magnitude
+                        or 0
+
+                    if rock:GetAttribute("Lucky") == true then
+                        if distance < luckyDistance then
+                            luckyDistance = distance
+                            nearestLucky = rock
+                        end
+                    elseif distance < normalDistance then
+                        normalDistance = distance
+                        nearestNormal = rock
+                    end
+                end
+            end
+        end
+    end
+
+    return nearestLucky or nearestNormal
+end
 
 local function rescanZone(zoneName)
     local folder = getRocksFolder(zoneName)
@@ -1267,6 +1201,8 @@ local function rescanZone(zoneName)
         currentRock = nil
         return false
     end
+
+    local candidate = findRock(zoneName)
 
     if currentRock and not validRock(currentRock, zoneName) then
         currentRock = nil
@@ -1278,17 +1214,25 @@ local function rescanZone(zoneName)
         nextRockAt = os.clock() + NEXT_ROCK_DELAY
     end
 
-    if not currentRock and os.clock() >= nextRockAt then
-        currentRock = findRock(zoneName)
+    if currentRock then
+        local currentIsLucky = currentRock:GetAttribute("Lucky") == true
+        local candidateIsLucky = candidate
+            and candidate:GetAttribute("Lucky") == true
+
+        if not currentIsLucky and candidateIsLucky then
+            currentRock = candidate
+            trackedRock = nil
+            trackedRockStartHP = nil
+            trackedRockStartTime = 0
+            nextTeleportAt = 0
+        end
+    elseif os.clock() >= nextRockAt then
+        currentRock = candidate
         nextTeleportAt = 0
     end
 
     return true
 end
-
---==================================================
--- MINING CYCLE
---==================================================
 
 local function miningCycle(mySession)
     if not RUNNING or SESSION ~= mySession then
@@ -1344,19 +1288,30 @@ local function miningCycle(mySession)
         return
     end
 
-    -- TELEPORT
+    local targetPosition = getPositionAboveOre(rock, root)
 
-    local distance = getDistance(root, part)
+    if not targetPosition then
+        setStatus("CANNOT CALCULATE ORE POSITION")
+        task.wait(SCAN_DELAY)
+        return
+    end
 
-    if distance > TELEPORT_SUCCESS_DISTANCE then
+    local targetDistance = (root.Position - targetPosition).Magnitude
+
+    if targetDistance > TELEPORT_SUCCESS_DISTANCE then
         if os.clock() < nextTeleportAt then
             setStatus("WAITING FOR MOVEMENT")
             task.wait(0.2)
             return
         end
 
-        setStatus("MOVING TO ROCK")
-        root.CFrame = part.CFrame * CFrame.new(0, 0, 3)
+        setStatus("MOVING ABOVE ORE")
+
+        root.CFrame = CFrame.new(targetPosition)
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+
+        task.wait(TELEPORT_SETTLE_DELAY)
 
         if not RUNNING or SESSION ~= mySession
             or selectedZone ~= zoneName then
@@ -1371,20 +1326,24 @@ local function miningCycle(mySession)
             return
         end
 
-        distance = getDistance(root, part)
+        targetPosition = getPositionAboveOre(rock, root)
 
-        if distance > TELEPORT_SUCCESS_DISTANCE then
+        if not targetPosition then
+            return
+        end
+
+        targetDistance = (root.Position - targetPosition).Magnitude
+
+        if targetDistance > TELEPORT_SUCCESS_DISTANCE then
             nextTeleportAt = os.clock() + TELEPORT_RETRY_DELAY
             setStatus("MOVEMENT NOT ACCEPTED")
             return
         end
 
         nextTeleportAt = 0
-        setStatus("REACHED ROCK")
+        setStatus("POSITIONED ABOVE ORE")
         return
     end
-
-    -- MINE
 
     local oldHP = rock:GetAttribute("HP")
 
@@ -1432,8 +1391,11 @@ local function miningCycle(mySession)
             return
         end
 
-        setStatus("MINING " .. string.upper(getDisplayName(zoneName)))
-
+        setStatus(
+            rock:GetAttribute("Lucky") == true
+            and "MINING LUCKY ROCK"
+            or "MINING " .. string.upper(getDisplayName(zoneName))
+        )
     else
         currentRock = nil
         trackedRock = nil
@@ -1448,10 +1410,6 @@ local function miningCycle(mySession)
         setStatus("ROCK DESTROYED - SEARCHING")
     end
 end
-
---==================================================
--- WORKER SUPERVISOR
---==================================================
 
 local function miningWorker(mySession)
     while RUNNING
@@ -1476,10 +1434,6 @@ local function miningWorker(mySession)
         task.wait(0.05)
     end
 end
-
---==================================================
--- START MINING
---==================================================
 
 startButton.MouseButton1Click:Connect(function()
     if UNLOADED or RUNNING then
@@ -1538,10 +1492,6 @@ startButton.MouseButton1Click:Connect(function()
     end)
 end)
 
---==================================================
--- STOP MINING
---==================================================
-
 local function stopMining()
     RUNNING = false
     SESSION += 1
@@ -1560,10 +1510,6 @@ local function stopMining()
 end
 
 stopButton.MouseButton1Click:Connect(stopMining)
-
---==================================================
--- GUI LAYOUT
---==================================================
 
 local function updateLayout(animate)
     if guiMinimized then
@@ -1650,10 +1596,6 @@ minimize.MouseButton1Click:Connect(function()
     updateLayout(true)
 end)
 
---==================================================
--- CLOSE / UNLOAD
---==================================================
-
 close.MouseButton1Click:Connect(function()
     saveConfig()
 
@@ -1666,10 +1608,6 @@ close.MouseButton1Click:Connect(function()
 
     gui:Destroy()
 end)
-
---==================================================
--- ANIMATED STATUS INDICATOR
---==================================================
 
 task.spawn(function()
     local pulse = false
@@ -1685,19 +1623,11 @@ task.spawn(function()
     end
 end)
 
---==================================================
--- SAVE ON CLOSE
---==================================================
-
 game:BindToClose(function()
     if not UNLOADED then
         saveConfig()
     end
 end)
-
---==================================================
--- INITIALIZE
---==================================================
 
 updateSelection()
 refreshZoneSearch()
@@ -1709,7 +1639,7 @@ updateAutoBuyButton()
 setStatus("STOPPED")
 setPurchaseStatus("AUTO BUY: OFF")
 
-print("[Multi-Zone Miner V20] Loaded successfully")
-print("[Multi-Zone Miner V20] Available zones: " .. #availableZones)
-print("[Multi-Zone Miner V20] Available miners: " .. #MinerNames)
-print("[Multi-Zone Miner V20] Auto Buy interval: " .. AUTO_BUY_INTERVAL .. " seconds")
+print("Auto Miner loaded")
+print("Available zones: " .. #availableZones)
+print("Available miners: " .. #MinerNames)
+print("Auto Buy interval: " .. AUTO_BUY_INTERVAL .. " seconds")
