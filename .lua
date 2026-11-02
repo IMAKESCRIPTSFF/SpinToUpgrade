@@ -1,5 +1,5 @@
---// GLACIER AUTO MINER V10.1
---// Real Executor
+--// GLACIER AUTO MINER V10.2
+--// No console prints
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -34,9 +34,14 @@ if old then
     old:Destroy()
 end
 
+local old2 = PlayerGui:FindFirstChild("GlacierMinerV102")
+if old2 then
+    old2:Destroy()
+end
+
 -- GUI
 local gui = Instance.new("ScreenGui")
-gui.Name = "GlacierMinerV101"
+gui.Name = "GlacierMinerV102"
 gui.ResetOnSpawn = false
 gui.Parent = PlayerGui
 
@@ -62,7 +67,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -75, 0, 30)
 title.Position = UDim2.fromOffset(10, 5)
 title.BackgroundTransparency = 1
-title.Text = "Glacier Auto Miner V10.1"
+title.Text = "Glacier Auto Miner V10.2"
 title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -133,13 +138,19 @@ local stopButton = makeButton(
 
 -- ROCK VALIDATION
 local function validRock(rock)
-    if not rock then return false end
-    if not rock:IsA("Model") then return false end
-    if rock.Parent ~= RocksFolder then return false end
-    if rock:GetAttribute("ZoneId") ~= "Glacier" then return false end
+    if not rock or not rock:IsA("Model") then
+        return false
+    end
+
+    if rock.Parent ~= RocksFolder then
+        return false
+    end
+
+    if rock:GetAttribute("ZoneId") ~= "Glacier" then
+        return false
+    end
 
     local hp = rock:GetAttribute("HP")
-
     return typeof(hp) == "number" and hp > 0
 end
 
@@ -165,7 +176,9 @@ end
 -- CHARACTER
 local function getRoot()
     local character = Player.Character
-    if not character then return nil end
+    if not character then
+        return nil
+    end
 
     return character:FindFirstChild("HumanoidRootPart")
 end
@@ -196,7 +209,6 @@ local function miningWorker(mySession)
             continue
         end
 
-        -- MOVE CLOSE TO ROCK
         root.CFrame = part.CFrame * CFrame.new(0, 0, 3)
 
         task.wait(0.15)
@@ -221,7 +233,6 @@ local function miningWorker(mySession)
                 if not validRock(rock) then
                     currentRock = nil
                     status.Text = "Rock destroyed - rescanning"
-
                 else
                     local newHP = rock:GetAttribute("HP")
 
@@ -242,7 +253,9 @@ end
 
 -- START
 startButton.MouseButton1Click:Connect(function()
-    if UNLOADED or RUNNING then return end
+    if UNLOADED or RUNNING then
+        return
+    end
 
     SESSION += 1
     RUNNING = true
@@ -259,7 +272,6 @@ stopButton.MouseButton1Click:Connect(function()
     RUNNING = false
     SESSION += 1
     currentRock = nil
-
     status.Text = "Stopped"
 end)
 
@@ -269,19 +281,15 @@ minimize.MouseButton1Click:Connect(function()
 
     if minimized then
         main.Size = UDim2.fromOffset(250, 35)
-
         status.Visible = false
         startButton.Visible = false
         stopButton.Visible = false
-
         minimize.Text = "+"
     else
         main.Size = UDim2.fromOffset(250, 150)
-
         status.Visible = true
         startButton.Visible = true
         stopButton.Visible = true
-
         minimize.Text = "-"
     end
 end)
@@ -291,8 +299,5 @@ close.MouseButton1Click:Connect(function()
     UNLOADED = true
     RUNNING = false
     SESSION += 1
-
     gui:Destroy()
 end)
-
-print("Glacier Auto Miner V10.1 loaded successfully!")
