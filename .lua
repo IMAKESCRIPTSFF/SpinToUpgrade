@@ -1,3 +1,4 @@
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -12,7 +13,6 @@ local TELEPORT_RETRY_DELAY = 0.75
 local TELEPORT_SUCCESS_DISTANCE = 5
 local TELEPORT_SETTLE_DELAY = 0.15
 local ORE_CLEARANCE = 1
-
 local NEXT_ROCK_DELAY = 0.3
 local SCAN_DELAY = 0.4
 local RESCAN_INTERVAL = 2
@@ -26,44 +26,17 @@ local CRAFT_REQUEST_DELAY = 0.5
 local BOSS_TELEPORT_INTERVAL = 0.10
 local BOSS_ATTACK_INTERVAL = 0.05
 
+local CONFIG_FILE = "SWS_Script.json"
+
 local MinerNames = {
-    "StoneMiner",
-    "CoalMiner",
-    "CopperMiner",
-    "IronMiner",
-    "GoldMiner",
-    "RubyMiner",
-    "SapphireMiner",
-    "EmeraldMiner",
-    "DiamondMiner",
-    "VoidstoneMiner",
-    "ToxiteMiner",
-    "StarliteMiner",
-    "CelestiumMiner",
-    "MoonstoneMiner",
-    "PrismiteMiner",
-    "AuroriumMiner",
-    "FrostiteMiner",
-    "AquamarineMiner",
-    "DragonscaleMiner",
-    "NeoniteMiner",
-    "DarkMatterMiner",
-    "BrassiteMiner",
-    "PixeliteMiner",
-    "HaloiteMiner",
-    "NebuliteMiner",
-    "SoulstoneMiner",
-    "PumpkinMiner"
+    "StoneMiner", "CoalMiner", "CopperMiner", "IronMiner",
+    "GoldMiner", "RubyMiner", "SapphireMiner", "EmeraldMiner",
+    "DiamondMiner", "VoidstoneMiner", "ToxiteMiner", "StarliteMiner",
+    "CelestiumMiner", "MoonstoneMiner", "PrismiteMiner", "AuroriumMiner",
+    "FrostiteMiner", "AquamarineMiner", "DragonscaleMiner", "NeoniteMiner",
+    "DarkMatterMiner", "BrassiteMiner", "PixeliteMiner", "HaloiteMiner",
+    "NebuliteMiner", "SoulstoneMiner", "PumpkinMiner"
 }
-
-local selectedMiners = {}
-
-local BLACK = Color3.fromRGB(5, 5, 5)
-local PANEL = Color3.fromRGB(14, 14, 14)
-local PANEL2 = Color3.fromRGB(22, 22, 22)
-local WHITE = Color3.fromRGB(255, 255, 255)
-local GREY = Color3.fromRGB(155, 155, 155)
-local DARK_GREY = Color3.fromRGB(65, 65, 65)
 
 local zoneOrder = {
     {"Mine1", "Starter Mine"},
@@ -89,21 +62,34 @@ local zoneOrder = {
     {"Crypt", "Haunted Crypt"}
 }
 
-local RUNNING = false
-local UNLOADED = false
-local SESSION = 0
+local BLACK = Color3.fromRGB(5, 5, 5)
+local PANEL = Color3.fromRGB(14, 14, 14)
+local PANEL2 = Color3.fromRGB(22, 22, 22)
+local WHITE = Color3.fromRGB(255, 255, 255)
+local GREY = Color3.fromRGB(155, 155, 155)
 
+local RUNNING = false
+local AUTO_BOSS = false
 local AUTO_BUY = false
+local UNLOADED = false
+
+local SESSION = 0
+local BOSS_SESSION = 0
 local BUY_SESSION = 0
 
-local AUTO_BOSS = false
-local BOSS_SESSION = 0
+local selectedZone
+local selectedMiners = {}
+local availableZones = {}
+local zoneRows = {}
+local minerRows = {}
 
-local selectedZone = nil
-local currentRock = nil
+local selectorExpanded = true
+local guiMinimized = false
+local savedGuiPosition
 
-local trackedRock = nil
-local trackedRockStartHP = nil
+local currentRock
+local trackedRock
+local trackedRockStartHP
 local trackedRockStartTime = 0
 
 local skippedRocks = setmetatable({}, {__mode = "k"})
@@ -115,19 +101,9 @@ local lastRescan = 0
 local lastBossTeleport = 0
 local lastBossAttack = 0
 
-local availableZones = {}
-local zoneRows = {}
-local minerRows = {}
-
-local selectorExpanded = true
-local guiMinimized = false
-
-local MineRemote = nil
-
-local CONFIG_FILE = "MultiZoneMinerV22.json"
+local MineRemote
 
 local savedConfig = {}
-local savedGuiPosition = nil
 local saveQueued = false
 
 local function loadConfig()
@@ -140,6 +116,27 @@ local function loadConfig()
         if isfile(CONFIG_FILE) then
             return HttpService:JSONDecode(readfile(CONFIG_FILE))
         end
+
+        local oldFiles = {
+            "MultiZoneMinerV25.json"
+        }
+
+        for _, oldFile in ipairs(oldFiles) do
+            if isfile(oldFile) then
+                local oldData = HttpService:JSONDecode(readfile(oldFile))
+
+                if type(oldData) == "table" then
+                    writefile(
+                        CONFIG_FILE,
+                        HttpService:JSONEncode(oldData)
+                    )
+
+                    return oldData
+                end
+            end
+        end
+
+        return {}
     end)
 
     if success and type(result) == "table" then
@@ -154,10 +151,12 @@ local function saveConfig()
 
     local config = {
         SelectedZone = selectedZone,
+        SelectedMiners = selectedMiners,
         SelectorExpanded = selectorExpanded,
         GuiMinimized = guiMinimized,
         GuiPosition = savedGuiPosition,
-        SelectedMiners = selectedMiners
+        AutoBoss = AUTO_BOSS,
+        AutoBuy = AUTO_BUY
     }
 
     return pcall(function()
@@ -166,9 +165,7 @@ local function saveConfig()
 end
 
 local function queueSave()
-    if saveQueued or UNLOADED then
-        return
-    end
+    if saveQueued or UNLOADED then return end
 
     saveQueued = true
 
@@ -185,36 +182,7 @@ loadConfig()
 
 if type(savedConfig.SelectedMiners) == "table" then
     for _, name in ipairs(MinerNames) do
-        selectedMiners[name] =
-            savedConfig.SelectedMiners[name] == true
-    end
-end
-
-for _, entry in ipairs(zoneOrder) do
-    local zone = ZonesFolder:FindFirstChild(entry[1])
-
-    if zone and zone:FindFirstChild("Rocks") then
-        table.insert(availableZones, {
-            Folder = entry[1],
-            Display = entry[2]
-        })
-
-        if entry[1] == "Glacier" then
-            selectedZone = entry[1]
-        end
-    end
-end
-
-if not selectedZone and availableZones[1] then
-    selectedZone = availableZones[1].Folder
-end
-
-if savedConfig.SelectedZone then
-    for _, entry in ipairs(availableZones) do
-        if entry.Folder == savedConfig.SelectedZone then
-            selectedZone = entry.Folder
-            break
-        end
+        selectedMiners[name] = savedConfig.SelectedMiners[name] == true
     end
 end
 
@@ -230,6 +198,31 @@ if type(savedConfig.GuiPosition) == "table" then
     savedGuiPosition = savedConfig.GuiPosition
 end
 
+local resumeBoss = savedConfig.AutoBoss == true
+local resumeBuy = savedConfig.AutoBuy == true
+
+for _, entry in ipairs(zoneOrder) do
+    local zone = ZonesFolder:FindFirstChild(entry[1])
+
+    if zone and zone:FindFirstChild("Rocks") then
+        table.insert(availableZones, {
+            Folder = entry[1],
+            Display = entry[2]
+        })
+    end
+end
+
+selectedZone = availableZones[1] and availableZones[1].Folder
+
+if savedConfig.SelectedZone then
+    for _, entry in ipairs(availableZones) do
+        if entry.Folder == savedConfig.SelectedZone then
+            selectedZone = entry.Folder
+            break
+        end
+    end
+end
+
 local function getDisplayName(name)
     for _, entry in ipairs(availableZones) do
         if entry.Folder == name then
@@ -240,78 +233,64 @@ local function getDisplayName(name)
     return tostring(name or "Unknown")
 end
 
-local old = PlayerGui:FindFirstChild("MultiZoneMinerV22")
-if old then
-    old:Destroy()
-end
+local old = PlayerGui:FindFirstChild("MultiZoneMinerV25")
+if old then old:Destroy() end
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "MultiZoneMinerV22"
+gui.Name = "MultiZoneMinerV25"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = PlayerGui
 
 local function corner(object, radius)
     local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, radius or 7)
+    c.CornerRadius = UDim.new(0, radius or 6)
     c.Parent = object
-    return c
 end
 
-local function stroke(object, color, thickness, transparency)
+local function stroke(object, transparency)
     local s = Instance.new("UIStroke")
-    s.Color = color or WHITE
-    s.Thickness = thickness or 1
-    s.Transparency = transparency or 0
+    s.Color = WHITE
+    s.Thickness = 1
+    s.Transparency = transparency or 0.6
     s.Parent = object
     return s
 end
 
-local function tween(object, duration, properties)
-    local animation = TweenService:Create(
-        object,
-        TweenInfo.new(
-            duration,
-            Enum.EasingStyle.Quint,
-            Enum.EasingDirection.Out
-        ),
-        properties
-    )
+local function makeButton(parent, text, size, position)
+    local b = Instance.new("TextButton")
+    b.Size = size
+    b.Position = position
+    b.BackgroundColor3 = PANEL2
+    b.BorderSizePixel = 0
+    b.Text = text
+    b.TextColor3 = WHITE
+    b.TextSize = 10
+    b.Font = Enum.Font.GothamBold
+    b.Parent = parent
 
-    animation:Play()
-    return animation
-end
+    corner(b, 5)
+    stroke(b)
 
-local function addHover(button, normalColor, hoverColor, outline)
-    button.MouseEnter:Connect(function()
-        tween(button, 0.15, {
-            BackgroundColor3 = hoverColor
-        })
-
-        if outline then
-            tween(outline, 0.15, {
-                Transparency = 0
-            })
-        end
+    b.MouseEnter:Connect(function()
+        TweenService:Create(b, TweenInfo.new(0.15), {
+            BackgroundColor3 = Color3.fromRGB(48, 48, 48)
+        }):Play()
     end)
 
-    button.MouseLeave:Connect(function()
-        tween(button, 0.15, {
-            BackgroundColor3 = normalColor
-        })
-
-        if outline then
-            tween(outline, 0.15, {
-                Transparency = 0.6
-            })
-        end
+    b.MouseLeave:Connect(function()
+        TweenService:Create(b, TweenInfo.new(0.15), {
+            BackgroundColor3 = PANEL2
+        }):Play()
     end)
+
+    return b
 end
 
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.fromOffset(290, 310)
-main.Position = UDim2.new(0.5, -145, 0.5, -155)
+main.Size = UDim2.fromOffset(290, 251)
+main.Position = UDim2.new(0.5, -145, 0.5, -125)
 main.BackgroundColor3 = BLACK
 main.BorderSizePixel = 0
 main.Active = true
@@ -320,8 +299,7 @@ main.ClipsDescendants = true
 main.Parent = gui
 
 corner(main, 10)
-
-local mainStroke = stroke(main, WHITE, 1, 0.45)
+local mainStroke = stroke(main, 0.45)
 
 if savedGuiPosition then
     pcall(function()
@@ -353,112 +331,44 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -145, 0, 30)
 title.Position = UDim2.fromOffset(12, 3)
 title.BackgroundTransparency = 1
-title.Text = "AUTO MINER / V22"
+title.Text = "AUTO MINER / V25"
 title.TextColor3 = WHITE
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = main
 
-local minersOpenButton = Instance.new("TextButton")
-minersOpenButton.Size = UDim2.fromOffset(48, 23)
-minersOpenButton.Position = UDim2.new(1, -113, 0, 5)
-minersOpenButton.BackgroundColor3 = PANEL2
-minersOpenButton.Text = "MINERS"
-minersOpenButton.TextColor3 = WHITE
-minersOpenButton.TextSize = 9
-minersOpenButton.Font = Enum.Font.GothamBold
-minersOpenButton.Parent = main
+local minersOpenButton = makeButton(
+    main, "MINERS",
+    UDim2.fromOffset(48, 23),
+    UDim2.new(1, -113, 0, 5)
+)
 
-corner(minersOpenButton, 5)
-local minersOpenStroke = stroke(minersOpenButton, WHITE, 1, 0.65)
+local minimize = makeButton(
+    main, "-",
+    UDim2.fromOffset(24, 23),
+    UDim2.new(1, -57, 0, 5)
+)
 
-local minimize = Instance.new("TextButton")
-minimize.Size = UDim2.fromOffset(24, 23)
-minimize.Position = UDim2.new(1, -57, 0, 5)
-minimize.BackgroundColor3 = PANEL2
-minimize.Text = "-"
-minimize.TextColor3 = WHITE
-minimize.TextSize = 17
-minimize.Font = Enum.Font.GothamBold
-minimize.Parent = main
+local close = makeButton(
+    main, "X",
+    UDim2.fromOffset(24, 23),
+    UDim2.new(1, -29, 0, 5)
+)
 
-corner(minimize, 5)
-local minimizeStroke = stroke(minimize, WHITE, 1, 0.7)
-
-local close = Instance.new("TextButton")
-close.Size = UDim2.fromOffset(24, 23)
-close.Position = UDim2.new(1, -29, 0, 5)
-close.BackgroundColor3 = PANEL2
-close.Text = "X"
-close.TextColor3 = WHITE
-close.TextSize = 12
-close.Font = Enum.Font.GothamBold
-close.Parent = main
-
-corner(close, 5)
-local closeStroke = stroke(close, WHITE, 1, 0.4)
-
-addHover(minimize, PANEL2, Color3.fromRGB(48, 48, 48), minimizeStroke)
-addHover(close, PANEL2, Color3.fromRGB(65, 65, 65), closeStroke)
-addHover(minersOpenButton, PANEL2, Color3.fromRGB(48, 48, 48), minersOpenStroke)
-
-local status = Instance.new("TextLabel")
-status.Size = UDim2.new(1, -20, 0, 19)
-status.Position = UDim2.fromOffset(10, 35)
-status.BackgroundTransparency = 1
-status.Text = "● STOPPED"
-status.TextColor3 = GREY
-status.TextSize = 11
-status.Font = Enum.Font.GothamBold
-status.TextXAlignment = Enum.TextXAlignment.Left
-status.TextTruncate = Enum.TextTruncate.AtEnd
-status.Parent = main
-
-local playerCounter = Instance.new("TextLabel")
-playerCounter.Size = UDim2.new(1, -20, 0, 17)
-playerCounter.Position = UDim2.fromOffset(10, 54)
-playerCounter.BackgroundTransparency = 1
-playerCounter.TextColor3 = GREY
-playerCounter.TextSize = 10
-playerCounter.Font = Enum.Font.Gotham
-playerCounter.TextXAlignment = Enum.TextXAlignment.Left
-playerCounter.Parent = main
-
-local function updatePlayerCount()
-    if not UNLOADED then
-        playerCounter.Text =
-            "PLAYERS ONLINE   " .. #Players:GetPlayers()
-            .. "    |    BOSS: "
-            .. (AUTO_BOSS and "ON" or "OFF")
-    end
-end
-
-Players.PlayerAdded:Connect(updatePlayerCount)
-Players.PlayerRemoving:Connect(updatePlayerCount)
-updatePlayerCount()
-
-local zoneToggle = Instance.new("TextButton")
-zoneToggle.Size = UDim2.new(1, -20, 0, 23)
-zoneToggle.Position = UDim2.fromOffset(10, 76)
-zoneToggle.BackgroundColor3 = PANEL2
-zoneToggle.Text = "ZONES ▼"
-zoneToggle.TextColor3 = WHITE
-zoneToggle.TextSize = 10
-zoneToggle.Font = Enum.Font.GothamBold
-zoneToggle.Parent = main
-
-corner(zoneToggle, 5)
-local zoneToggleStroke = stroke(zoneToggle, WHITE, 1, 0.75)
-addHover(zoneToggle, PANEL2, Color3.fromRGB(42, 42, 42), zoneToggleStroke)
+local zoneToggle = makeButton(
+    main, "ZONES ▼",
+    UDim2.new(1, -20, 0, 23),
+    UDim2.fromOffset(10, 35)
+)
 
 local search = Instance.new("TextBox")
 search.Size = UDim2.new(1, -20, 0, 23)
-search.Position = UDim2.fromOffset(10, 104)
+search.Position = UDim2.fromOffset(10, 63)
 search.BackgroundColor3 = PANEL
 search.BorderSizePixel = 0
 search.PlaceholderText = "Search zones..."
-search.PlaceholderColor3 = DARK_GREY
+search.PlaceholderColor3 = GREY
 search.Text = ""
 search.TextColor3 = WHITE
 search.TextSize = 10
@@ -468,7 +378,7 @@ search.TextXAlignment = Enum.TextXAlignment.Left
 search.Parent = main
 
 corner(search, 5)
-stroke(search, WHITE, 1, 0.8)
+stroke(search, 0.8)
 
 local searchPadding = Instance.new("UIPadding")
 searchPadding.PaddingLeft = UDim.new(0, 8)
@@ -476,7 +386,7 @@ searchPadding.Parent = search
 
 local scroll = Instance.new("ScrollingFrame")
 scroll.Size = UDim2.new(1, -20, 0, 90)
-scroll.Position = UDim2.fromOffset(10, 132)
+scroll.Position = UDim2.fromOffset(10, 91)
 scroll.BackgroundColor3 = PANEL
 scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 3
@@ -485,7 +395,7 @@ scroll.CanvasSize = UDim2.fromOffset(0, 0)
 scroll.Parent = main
 
 corner(scroll, 6)
-stroke(scroll, WHITE, 1, 0.85)
+stroke(scroll, 0.85)
 
 local layout = Instance.new("UIListLayout")
 layout.Padding = UDim.new(0, 3)
@@ -496,19 +406,17 @@ local scrollPadding = Instance.new("UIPadding")
 scrollPadding.PaddingTop = UDim.new(0, 5)
 scrollPadding.PaddingLeft = UDim.new(0, 5)
 scrollPadding.PaddingRight = UDim.new(0, 5)
-scrollPadding.PaddingBottom = UDim.new(0, 5)
 scrollPadding.Parent = scroll
 
 layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     scroll.CanvasSize = UDim2.fromOffset(
-        0,
-        layout.AbsoluteContentSize.Y + 10
+        0, layout.AbsoluteContentSize.Y + 10
     )
 end)
 
 local selectedLabel = Instance.new("TextLabel")
 selectedLabel.Size = UDim2.new(1, -20, 0, 17)
-selectedLabel.Position = UDim2.fromOffset(10, 228)
+selectedLabel.Position = UDim2.fromOffset(10, 186)
 selectedLabel.BackgroundTransparency = 1
 selectedLabel.TextColor3 = WHITE
 selectedLabel.TextSize = 10
@@ -516,59 +424,23 @@ selectedLabel.Font = Enum.Font.GothamBold
 selectedLabel.TextXAlignment = Enum.TextXAlignment.Left
 selectedLabel.Parent = main
 
-local rockInfo = Instance.new("TextLabel")
-rockInfo.Size = UDim2.new(1, -20, 0, 16)
-rockInfo.Position = UDim2.fromOffset(10, 246)
-rockInfo.BackgroundTransparency = 1
-rockInfo.Text = "CURRENT ROCK   --"
-rockInfo.TextColor3 = GREY
-rockInfo.TextSize = 10
-rockInfo.Font = Enum.Font.Gotham
-rockInfo.TextXAlignment = Enum.TextXAlignment.Left
-rockInfo.Parent = main
-
-local function makeButton(text, x, width, color)
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.fromOffset(width, 32)
-    button.Position = UDim2.fromOffset(x, 267)
-    button.BackgroundColor3 = color
-    button.BorderSizePixel = 0
-    button.Text = text
-    button.TextColor3 = WHITE
-    button.TextSize = 9
-    button.Font = Enum.Font.GothamBold
-    button.Parent = main
-
-    corner(button, 6)
-    local outline = stroke(button, WHITE, 1, 0.7)
-
-    return button, outline
-end
-
-local startButton, startStroke = makeButton(
-    "MINING",
-    10,
-    85,
-    Color3.fromRGB(28, 28, 28)
+local startButton = makeButton(
+    main, "MINING",
+    UDim2.fromOffset(85, 32),
+    UDim2.fromOffset(10, 209)
 )
 
-local bossButton, bossStroke = makeButton(
-    "BOSS: OFF",
-    102,
-    85,
-    Color3.fromRGB(28, 28, 28)
+local bossButton = makeButton(
+    main, "BOSS: OFF",
+    UDim2.fromOffset(85, 32),
+    UDim2.fromOffset(102, 209)
 )
 
-local stopButton, stopStroke = makeButton(
-    "STOP",
-    194,
-    85,
-    Color3.fromRGB(28, 28, 28)
+local stopButton = makeButton(
+    main, "STOP",
+    UDim2.fromOffset(85, 32),
+    UDim2.fromOffset(194, 209)
 )
-
-addHover(startButton, Color3.fromRGB(28, 28, 28), Color3.fromRGB(65, 65, 65), startStroke)
-addHover(bossButton, Color3.fromRGB(28, 28, 28), Color3.fromRGB(65, 65, 65), bossStroke)
-addHover(stopButton, Color3.fromRGB(28, 28, 28), Color3.fromRGB(65, 65, 65), stopStroke)
 
 local minerWindow = Instance.new("Frame")
 minerWindow.Name = "MinerSelection"
@@ -583,7 +455,7 @@ minerWindow.ClipsDescendants = true
 minerWindow.Parent = gui
 
 corner(minerWindow, 10)
-stroke(minerWindow, WHITE, 1, 0.45)
+stroke(minerWindow, 0.45)
 
 local minerTitle = Instance.new("TextLabel")
 minerTitle.Size = UDim2.new(1, -45, 0, 32)
@@ -596,19 +468,11 @@ minerTitle.Font = Enum.Font.GothamBold
 minerTitle.TextXAlignment = Enum.TextXAlignment.Left
 minerTitle.Parent = minerWindow
 
-local minerClose = Instance.new("TextButton")
-minerClose.Size = UDim2.fromOffset(25, 23)
-minerClose.Position = UDim2.new(1, -31, 0, 5)
-minerClose.BackgroundColor3 = PANEL2
-minerClose.Text = "X"
-minerClose.TextColor3 = WHITE
-minerClose.TextSize = 12
-minerClose.Font = Enum.Font.GothamBold
-minerClose.Parent = minerWindow
-
-corner(minerClose, 5)
-local minerCloseStroke = stroke(minerClose, WHITE, 1, 0.6)
-addHover(minerClose, PANEL2, Color3.fromRGB(65, 65, 65), minerCloseStroke)
+local minerClose = makeButton(
+    minerWindow, "X",
+    UDim2.fromOffset(25, 23),
+    UDim2.new(1, -31, 0, 5)
+)
 
 local minerDescription = Instance.new("TextLabel")
 minerDescription.Size = UDim2.new(1, -20, 0, 30)
@@ -642,7 +506,7 @@ minerScroll.CanvasSize = UDim2.fromOffset(0, 0)
 minerScroll.Parent = minerWindow
 
 corner(minerScroll, 6)
-stroke(minerScroll, WHITE, 1, 0.85)
+stroke(minerScroll, 0.85)
 
 local minerLayout = Instance.new("UIListLayout")
 minerLayout.Padding = UDim.new(0, 3)
@@ -653,13 +517,11 @@ local minerPadding = Instance.new("UIPadding")
 minerPadding.PaddingTop = UDim.new(0, 5)
 minerPadding.PaddingLeft = UDim.new(0, 5)
 minerPadding.PaddingRight = UDim.new(0, 5)
-minerPadding.PaddingBottom = UDim.new(0, 5)
 minerPadding.Parent = minerScroll
 
 minerLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     minerScroll.CanvasSize = UDim2.fromOffset(
-        0,
-        minerLayout.AbsoluteContentSize.Y + 10
+        0, minerLayout.AbsoluteContentSize.Y + 10
     )
 end)
 
@@ -691,7 +553,6 @@ local function updateMinerRows()
 
             row.Text = (enabled and "  [X]  " or "  [ ]  ") .. name
             row.TextColor3 = enabled and WHITE or GREY
-
             row.BackgroundColor3 = enabled
                 and Color3.fromRGB(48, 48, 48)
                 or PANEL2
@@ -724,33 +585,17 @@ for index, name in ipairs(MinerNames) do
     end)
 end
 
-local selectAllButton = Instance.new("TextButton")
-selectAllButton.Size = UDim2.fromOffset(115, 25)
-selectAllButton.Position = UDim2.fromOffset(10, 320)
-selectAllButton.BackgroundColor3 = PANEL2
-selectAllButton.Text = "SELECT ALL"
-selectAllButton.TextColor3 = WHITE
-selectAllButton.TextSize = 9
-selectAllButton.Font = Enum.Font.GothamBold
-selectAllButton.Parent = minerWindow
+local selectAllButton = makeButton(
+    minerWindow, "SELECT ALL",
+    UDim2.fromOffset(115, 25),
+    UDim2.fromOffset(10, 320)
+)
 
-corner(selectAllButton, 5)
-local selectAllStroke = stroke(selectAllButton, WHITE, 1, 0.7)
-addHover(selectAllButton, PANEL2, Color3.fromRGB(55, 55, 55), selectAllStroke)
-
-local deselectAllButton = Instance.new("TextButton")
-deselectAllButton.Size = UDim2.fromOffset(115, 25)
-deselectAllButton.Position = UDim2.fromOffset(135, 320)
-deselectAllButton.BackgroundColor3 = PANEL2
-deselectAllButton.Text = "DESELECT ALL"
-deselectAllButton.TextColor3 = WHITE
-deselectAllButton.TextSize = 9
-deselectAllButton.Font = Enum.Font.GothamBold
-deselectAllButton.Parent = minerWindow
-
-corner(deselectAllButton, 5)
-local deselectAllStroke = stroke(deselectAllButton, WHITE, 1, 0.7)
-addHover(deselectAllButton, PANEL2, Color3.fromRGB(55, 55, 55), deselectAllStroke)
+local deselectAllButton = makeButton(
+    minerWindow, "DESELECT ALL",
+    UDim2.fromOffset(115, 25),
+    UDim2.fromOffset(135, 320)
+)
 
 selectAllButton.MouseButton1Click:Connect(function()
     for _, name in ipairs(MinerNames) do
@@ -779,36 +624,23 @@ purchaseStatus.TextColor3 = GREY
 purchaseStatus.TextSize = 9
 purchaseStatus.Font = Enum.Font.Gotham
 purchaseStatus.TextXAlignment = Enum.TextXAlignment.Left
-purchaseStatus.TextTruncate = Enum.TextTruncate.AtEnd
 purchaseStatus.Parent = minerWindow
 
-local autoBuyButton = Instance.new("TextButton")
-autoBuyButton.Size = UDim2.fromOffset(150, 30)
-autoBuyButton.Position = UDim2.fromOffset(10, 370)
-autoBuyButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-autoBuyButton.Text = "AUTO BUY: OFF"
-autoBuyButton.TextColor3 = WHITE
-autoBuyButton.TextSize = 10
-autoBuyButton.Font = Enum.Font.GothamBold
-autoBuyButton.Parent = minerWindow
+local autoBuyButton = makeButton(
+    minerWindow, "AUTO BUY: OFF",
+    UDim2.fromOffset(150, 30),
+    UDim2.fromOffset(10, 370)
+)
 
-corner(autoBuyButton, 6)
-local autoBuyStroke = stroke(autoBuyButton, WHITE, 1, 0.6)
-addHover(autoBuyButton, Color3.fromRGB(35, 35, 35), Color3.fromRGB(65, 65, 65), autoBuyStroke)
+local stopBuyButton = makeButton(
+    minerWindow, "STOP",
+    UDim2.fromOffset(90, 30),
+    UDim2.fromOffset(170, 370)
+)
 
-local stopBuyButton = Instance.new("TextButton")
-stopBuyButton.Size = UDim2.fromOffset(90, 30)
-stopBuyButton.Position = UDim2.fromOffset(170, 370)
-stopBuyButton.BackgroundColor3 = PANEL2
-stopBuyButton.Text = "STOP"
-stopBuyButton.TextColor3 = WHITE
-stopBuyButton.TextSize = 10
-stopBuyButton.Font = Enum.Font.GothamBold
-stopBuyButton.Parent = minerWindow
-
-corner(stopBuyButton, 6)
-local stopBuyStroke = stroke(stopBuyButton, WHITE, 1, 0.7)
-addHover(stopBuyButton, PANEL2, Color3.fromRGB(65, 65, 65), stopBuyStroke)
+local function setStatus(message)
+    return
+end
 
 local function setPurchaseStatus(message)
     if not UNLOADED and purchaseStatus.Parent then
@@ -829,13 +661,19 @@ local function getCraftRemote()
 end
 
 local function updateAutoBuyButton()
-    if AUTO_BUY then
-        autoBuyButton.Text = "AUTO BUY: ON"
-        autoBuyButton.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-    else
-        autoBuyButton.Text = "AUTO BUY: OFF"
-        autoBuyButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-    end
+    autoBuyButton.Text = AUTO_BUY and "AUTO BUY: ON" or "AUTO BUY: OFF"
+    autoBuyButton.BackgroundColor3 = AUTO_BUY
+        and Color3.fromRGB(55, 55, 55)
+        or PANEL2
+end
+
+local function stopAutoBuy()
+    AUTO_BUY = false
+    BUY_SESSION += 1
+
+    updateAutoBuyButton()
+    setPurchaseStatus("AUTO BUY STOPPED")
+    queueSave()
 end
 
 local function autoBuyWorker(mySession)
@@ -845,13 +683,11 @@ local function autoBuyWorker(mySession)
         AUTO_BUY = false
         updateAutoBuyButton()
         setPurchaseStatus("CRAFTMINER REMOTE NOT FOUND")
+        queueSave()
         return
     end
 
-    while AUTO_BUY
-        and not UNLOADED
-        and BUY_SESSION == mySession do
-
+    while AUTO_BUY and not UNLOADED and BUY_SESSION == mySession do
         local selected = {}
 
         for _, name in ipairs(MinerNames) do
@@ -862,25 +698,19 @@ local function autoBuyWorker(mySession)
 
         if #selected == 0 then
             setPurchaseStatus("NO MINERS SELECTED")
+            task.wait(1)
         else
             local completed = 0
             local failed = 0
 
             for index, minerName in ipairs(selected) do
-                if not AUTO_BUY
-                    or UNLOADED
-                    or BUY_SESSION ~= mySession then
+                if not AUTO_BUY or UNLOADED or BUY_SESSION ~= mySession then
                     break
                 end
 
                 setPurchaseStatus(
-                    "CHECKING "
-                    .. minerName
-                    .. " ("
-                    .. index
-                    .. "/"
-                    .. #selected
-                    .. ")"
+                    "CHECKING " .. minerName
+                    .. " (" .. index .. "/" .. #selected .. ")"
                 )
 
                 local success, result = pcall(function()
@@ -889,53 +719,30 @@ local function autoBuyWorker(mySession)
 
                 if success and result ~= false then
                     completed += 1
-                    setPurchaseStatus("REQUEST SENT: " .. minerName)
                 else
                     failed += 1
-                    setPurchaseStatus("FAILED: " .. minerName)
                 end
 
                 task.wait(CRAFT_REQUEST_DELAY)
             end
 
-            if not AUTO_BUY
-                or UNLOADED
-                or BUY_SESSION ~= mySession then
-                break
+            if AUTO_BUY and not UNLOADED and BUY_SESSION == mySession then
+                setPurchaseStatus(
+                    "CYCLE DONE: "
+                    .. completed
+                    .. " SENT / "
+                    .. failed
+                    .. " FAILED"
+                )
+
+                task.wait(AUTO_BUY_INTERVAL)
             end
-
-            setPurchaseStatus(
-                "CYCLE DONE: "
-                .. completed
-                .. " SENT / "
-                .. failed
-                .. " FAILED"
-            )
-
-            task.wait(AUTO_BUY_INTERVAL)
-        end
-
-        if #selected == 0 then
-            task.wait(1)
         end
     end
 end
 
-local function stopAutoBuy()
-    AUTO_BUY = false
-    BUY_SESSION += 1
-
-    updateAutoBuyButton()
-    setPurchaseStatus("AUTO BUY STOPPED")
-end
-
-autoBuyButton.MouseButton1Click:Connect(function()
-    if UNLOADED then return end
-
-    if AUTO_BUY then
-        stopAutoBuy()
-        return
-    end
+local function startAutoBuy()
+    if AUTO_BUY or UNLOADED then return end
 
     if getSelectedMinerCount() == 0 then
         setPurchaseStatus("SELECT AT LEAST ONE MINER")
@@ -954,6 +761,7 @@ autoBuyButton.MouseButton1Click:Connect(function()
 
     updateAutoBuyButton()
     setPurchaseStatus("AUTO BUY STARTED")
+    queueSave()
 
     task.spawn(function()
         local success, err = xpcall(function()
@@ -966,8 +774,17 @@ autoBuyButton.MouseButton1Click:Connect(function()
             AUTO_BUY = false
             updateAutoBuyButton()
             setPurchaseStatus("AUTO BUY ERROR: " .. tostring(err):sub(1, 35))
+            queueSave()
         end
     end)
+end
+
+autoBuyButton.MouseButton1Click:Connect(function()
+    if AUTO_BUY then
+        stopAutoBuy()
+    else
+        startAutoBuy()
+    end
 end)
 
 stopBuyButton.MouseButton1Click:Connect(stopAutoBuy)
@@ -979,14 +796,6 @@ end)
 minerClose.MouseButton1Click:Connect(function()
     minerWindow.Visible = false
 end)
-
-local function setStatus(message)
-    if UNLOADED or not status or not status.Parent then
-        return
-    end
-
-    status.Text = "● " .. tostring(message)
-end
 
 local function updateSelection()
     selectedLabel.Text = "ZONE: " .. getDisplayName(selectedZone)
@@ -1027,35 +836,17 @@ end
 for index, entry in ipairs(availableZones) do
     local folderName = entry.Folder
 
-    local row = Instance.new("TextButton")
-    row.Size = UDim2.new(1, -3, 0, 23)
-    row.BackgroundColor3 = PANEL2
-    row.BorderSizePixel = 0
-    row.TextColor3 = GREY
-    row.TextSize = 10
-    row.Font = Enum.Font.Gotham
-    row.TextXAlignment = Enum.TextXAlignment.Left
+    local row = makeButton(
+        scroll,
+        getDisplayName(folderName),
+        UDim2.new(1, -3, 0, 23),
+        UDim2.new()
+    )
+
     row.LayoutOrder = index
-    row.Parent = scroll
-
-    corner(row, 4)
+    row.TextXAlignment = Enum.TextXAlignment.Left
+    row.TextSize = 10
     zoneRows[folderName] = row
-
-    row.MouseEnter:Connect(function()
-        if folderName ~= selectedZone then
-            tween(row, 0.12, {
-                BackgroundColor3 = Color3.fromRGB(42, 42, 42)
-            })
-        end
-    end)
-
-    row.MouseLeave:Connect(function()
-        if folderName ~= selectedZone then
-            tween(row, 0.12, {
-                BackgroundColor3 = PANEL2
-            })
-        end
-    end)
 
     row.MouseButton1Click:Connect(function()
         selectedZone = folderName
@@ -1071,9 +862,6 @@ for index, entry in ipairs(availableZones) do
 
         updateSelection()
         queueSave()
-
-        setStatus("ZONE CHANGED")
-        rockInfo.Text = "CURRENT ROCK   --"
     end)
 end
 
@@ -1086,18 +874,14 @@ local function getRocksFolder(zoneName)
 end
 
 local function getRockPart(rock)
-    if not rock then
-        return nil
-    end
+    if not rock then return nil end
 
     return rock.PrimaryPart
         or rock:FindFirstChildWhichIsA("BasePart", true)
 end
 
 local function getPositionAboveOre(rock, root)
-    if not rock or not root then
-        return nil
-    end
+    if not rock or not root then return nil end
 
     local success, boxCFrame, boxSize = pcall(function()
         return rock:GetBoundingBox()
@@ -1107,7 +891,7 @@ local function getPositionAboveOre(rock, root)
         return nil
     end
 
-    local oreTopY = boxCFrame.Position.Y + (boxSize.Y / 2)
+    local oreTopY = boxCFrame.Position.Y + boxSize.Y / 2
     local rootHalfHeight = root.Size.Y / 2
 
     return Vector3.new(
@@ -1135,9 +919,7 @@ end
 local function getCharacterParts()
     local character = Player.Character
 
-    if not character then
-        return nil, nil
-    end
+    if not character then return nil, nil end
 
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     local root = character:FindFirstChild("HumanoidRootPart")
@@ -1163,18 +945,11 @@ end
 
 local function getDiamondFist()
     local adminEvents = workspace:FindFirstChild("AdminEvents")
-
-    if not adminEvents then
-        return nil
-    end
-
-    return adminEvents:FindFirstChild("DiamondFist")
+    return adminEvents and adminEvents:FindFirstChild("DiamondFist")
 end
 
 local function getBossFistPart(boss, root)
-    if not boss then
-        return nil
-    end
+    if not boss then return nil end
 
     if boss:IsA("BasePart") then
         return boss
@@ -1183,10 +958,9 @@ local function getBossFistPart(boss, root)
     local candidates = {}
 
     for _, obj in ipairs(boss:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            if string.find(string.lower(obj.Name), "fist", 1, true) then
-                table.insert(candidates, obj)
-            end
+        if obj:IsA("BasePart")
+            and string.find(string.lower(obj.Name), "fist", 1, true) then
+            table.insert(candidates, obj)
         end
     end
 
@@ -1210,15 +984,18 @@ local function getBossFistPart(boss, root)
 end
 
 local function updateBossButton()
-    if AUTO_BOSS then
-        bossButton.Text = "BOSS: ON"
-        bossButton.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-    else
-        bossButton.Text = "BOSS: OFF"
-        bossButton.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
-    end
+    bossButton.Text = AUTO_BOSS and "BOSS: ON" or "BOSS: OFF"
+    bossButton.BackgroundColor3 = AUTO_BOSS
+        and Color3.fromRGB(55, 55, 55)
+        or PANEL2
+end
 
-    updatePlayerCount()
+local function stopBoss()
+    AUTO_BOSS = false
+    BOSS_SESSION += 1
+
+    updateBossButton()
+    queueSave()
 end
 
 local function bossWorker(mySession)
@@ -1227,14 +1004,11 @@ local function bossWorker(mySession)
     if not MineRemote then
         AUTO_BOSS = false
         updateBossButton()
-        setStatus("MINEROCK REMOTE NOT FOUND")
+        queueSave()
         return
     end
 
-    while AUTO_BOSS
-        and not UNLOADED
-        and BOSS_SESSION == mySession do
-
+    while AUTO_BOSS and not UNLOADED and BOSS_SESSION == mySession do
         local boss = getDiamondFist()
 
         if boss then
@@ -1263,44 +1037,17 @@ local function bossWorker(mySession)
                             MineRemote:FireServer(boss)
                         end)
                     end
-
-                    setStatus("AUTO BOSS - ATTACKING")
-                    rockInfo.Text = "BOSS TARGET   DIAMOND FIST"
-                else
-                    setStatus("BOSS FOUND - WAITING FOR FIST")
                 end
-            else
-                setStatus("WAITING FOR CHARACTER")
             end
-        else
-            setStatus("AUTO BOSS - SEARCHING")
         end
 
         task.wait(0.03)
     end
 end
 
-bossButton.MouseButton1Click:Connect(function()
-    if UNLOADED then return end
-
-    if AUTO_BOSS then
-        AUTO_BOSS = false
-        BOSS_SESSION += 1
-
-        updateBossButton()
-        setStatus(RUNNING and "MINING" or "STOPPED")
-
-        if not RUNNING then
-            rockInfo.Text = "CURRENT ROCK   --"
-        end
-
-        return
-    end
-
-    if not getMineRemote() then
-        setStatus("MINEROCK REMOTE NOT FOUND")
-        return
-    end
+local function startBoss()
+    if AUTO_BOSS or UNLOADED then return end
+    if not getMineRemote() then return end
 
     AUTO_BOSS = true
     BOSS_SESSION += 1
@@ -1311,10 +1058,10 @@ bossButton.MouseButton1Click:Connect(function()
     local mySession = BOSS_SESSION
 
     updateBossButton()
-    setStatus("AUTO BOSS - SEARCHING")
+    queueSave()
 
     task.spawn(function()
-        local success, err = xpcall(function()
+        local success = xpcall(function()
             bossWorker(mySession)
         end, function(errorMessage)
             return tostring(errorMessage)
@@ -1323,45 +1070,49 @@ bossButton.MouseButton1Click:Connect(function()
         if not success and BOSS_SESSION == mySession then
             AUTO_BOSS = false
             updateBossButton()
-            setStatus("BOSS ERROR: " .. tostring(err):sub(1, 40))
+            queueSave()
         end
     end)
+end
+
+bossButton.MouseButton1Click:Connect(function()
+    if AUTO_BOSS then
+        stopBoss()
+    else
+        startBoss()
+    end
 end)
 
 local function findRock(zoneName)
     local folder = getRocksFolder(zoneName)
 
-    if not folder then
-        return nil
-    end
+    if not folder then return nil end
 
     local _, root = getCharacterParts()
-    local nearestLucky = nil
-    local nearestNormal = nil
+    local nearestLucky
+    local nearestNormal
     local luckyDistance = math.huge
     local normalDistance = math.huge
 
     for _, rock in ipairs(folder:GetChildren()) do
-        if validRock(rock, zoneName) then
-            local skipUntil = skippedRocks[rock] or 0
+        if validRock(rock, zoneName)
+            and os.clock() >= (skippedRocks[rock] or 0) then
 
-            if os.clock() >= skipUntil then
-                local part = getRockPart(rock)
+            local part = getRockPart(rock)
 
-                if part then
-                    local distance = root
-                        and (root.Position - part.Position).Magnitude
-                        or 0
+            if part then
+                local distance = root
+                    and (root.Position - part.Position).Magnitude
+                    or 0
 
-                    if rock:GetAttribute("Lucky") == true then
-                        if distance < luckyDistance then
-                            luckyDistance = distance
-                            nearestLucky = rock
-                        end
-                    elseif distance < normalDistance then
-                        normalDistance = distance
-                        nearestNormal = rock
+                if rock:GetAttribute("Lucky") == true then
+                    if distance < luckyDistance then
+                        luckyDistance = distance
+                        nearestLucky = rock
                     end
+                elseif distance < normalDistance then
+                    normalDistance = distance
+                    nearestNormal = rock
                 end
             end
         end
@@ -1371,9 +1122,7 @@ local function findRock(zoneName)
 end
 
 local function rescanZone(zoneName)
-    local folder = getRocksFolder(zoneName)
-
-    if not folder then
+    if not getRocksFolder(zoneName) then
         currentRock = nil
         return false
     end
@@ -1411,14 +1160,11 @@ local function rescanZone(zoneName)
 end
 
 local function miningCycle(mySession)
-    if not RUNNING or SESSION ~= mySession then
-        return
-    end
+    if not RUNNING or SESSION ~= mySession then return end
 
     local zoneName = selectedZone
 
     if not zoneName then
-        setStatus("NO ZONE SELECTED")
         task.wait(SCAN_DELAY)
         return
     end
@@ -1429,7 +1175,6 @@ local function miningCycle(mySession)
         lastRescan = now
 
         if not rescanZone(zoneName) then
-            setStatus("SCANNING FOR ZONE")
             task.wait(SCAN_DELAY)
             return
         end
@@ -1441,8 +1186,6 @@ local function miningCycle(mySession)
     end
 
     if not currentRock then
-        setStatus("SCANNING " .. string.upper(getDisplayName(zoneName)))
-        rockInfo.Text = "CURRENT ROCK   --"
         task.wait(SCAN_DELAY)
         return
     end
@@ -1459,7 +1202,6 @@ local function miningCycle(mySession)
     local part = getRockPart(rock)
 
     if not humanoid or not root or not part then
-        setStatus("WAITING FOR CHARACTER")
         task.wait(SCAN_DELAY)
         return
     end
@@ -1467,21 +1209,17 @@ local function miningCycle(mySession)
     local targetPosition = getPositionAboveOre(rock, root)
 
     if not targetPosition then
-        setStatus("CANNOT CALCULATE ORE POSITION")
         task.wait(SCAN_DELAY)
         return
     end
 
-    local targetDistance = (root.Position - targetPosition).Magnitude
+    local distance = (root.Position - targetPosition).Magnitude
 
-    if targetDistance > TELEPORT_SUCCESS_DISTANCE then
+    if distance > TELEPORT_SUCCESS_DISTANCE then
         if os.clock() < nextTeleportAt then
-            setStatus("WAITING FOR MOVEMENT")
             task.wait(0.2)
             return
         end
-
-        setStatus("MOVING ABOVE ORE")
 
         root.CFrame = CFrame.new(targetPosition)
         root.AssemblyLinearVelocity = Vector3.zero
@@ -1504,20 +1242,16 @@ local function miningCycle(mySession)
 
         targetPosition = getPositionAboveOre(rock, root)
 
-        if not targetPosition then
-            return
-        end
+        if not targetPosition then return end
 
-        targetDistance = (root.Position - targetPosition).Magnitude
+        distance = (root.Position - targetPosition).Magnitude
 
-        if targetDistance > TELEPORT_SUCCESS_DISTANCE then
+        if distance > TELEPORT_SUCCESS_DISTANCE then
             nextTeleportAt = os.clock() + TELEPORT_RETRY_DELAY
-            setStatus("MOVEMENT NOT ACCEPTED")
             return
         end
 
         nextTeleportAt = 0
-        setStatus("POSITIONED ABOVE ORE")
         return
     end
 
@@ -1529,12 +1263,11 @@ local function miningCycle(mySession)
         trackedRockStartTime = os.clock()
     end
 
-    local success, err = pcall(function()
+    local success = pcall(function()
         MineRemote:FireServer(rock)
     end)
 
     if not success then
-        setStatus("MINE ERROR: " .. tostring(err):sub(1, 50))
         task.wait(ERROR_RETRY_DELAY)
         return
     end
@@ -1548,7 +1281,6 @@ local function miningCycle(mySession)
 
     if validRock(rock, zoneName) then
         local newHP = rock:GetAttribute("HP")
-        rockInfo.Text = "CURRENT ROCK   HP: " .. tostring(newHP)
 
         if newHP >= trackedRockStartHP
             and os.clock() - trackedRockStartTime >= NO_DAMAGE_TIMEOUT then
@@ -1562,16 +1294,8 @@ local function miningCycle(mySession)
 
             nextTeleportAt = 0
             nextRockAt = 0
-
-            setStatus("NO DAMAGE - SWITCHING ORE")
             return
         end
-
-        setStatus(
-            rock:GetAttribute("Lucky") == true
-            and "MINING LUCKY ROCK"
-            or "MINING " .. string.upper(getDisplayName(zoneName))
-        )
     else
         currentRock = nil
         trackedRock = nil
@@ -1581,25 +1305,18 @@ local function miningCycle(mySession)
         nextTeleportAt = 0
         nextRockAt = os.clock() + NEXT_ROCK_DELAY
         lastRescan = 0
-
-        rockInfo.Text = "CURRENT ROCK   DESTROYED"
-        setStatus("ROCK DESTROYED - SEARCHING")
     end
 end
 
 local function miningWorker(mySession)
-    while RUNNING
-        and not UNLOADED
-        and SESSION == mySession do
-
-        local success, err = xpcall(function()
+    while RUNNING and not UNLOADED and SESSION == mySession do
+        local success = xpcall(function()
             miningCycle(mySession)
         end, function(errorMessage)
             return tostring(errorMessage)
         end)
 
         if not success then
-            setStatus("WORKER ERROR: " .. tostring(err):sub(1, 55))
             task.wait(ERROR_RETRY_DELAY)
         end
 
@@ -1611,23 +1328,12 @@ local function miningWorker(mySession)
     end
 end
 
-startButton.MouseButton1Click:Connect(function()
-    if UNLOADED or RUNNING then
-        return
-    end
-
-    if not selectedZone then
-        setStatus("NO ZONE AVAILABLE")
-        return
-    end
+local function startMining()
+    if UNLOADED or RUNNING then return end
+    if not selectedZone then return end
 
     local remote = getMineRemote()
-
-    if not remote then
-        MineRemote = nil
-        setStatus("MINEROCK REMOTE NOT FOUND")
-        return
-    end
+    if not remote then return end
 
     MineRemote = remote
 
@@ -1645,11 +1351,8 @@ startButton.MouseButton1Click:Connect(function()
 
     local mySession = SESSION
 
-    setStatus("STARTING MINER")
-    rockInfo.Text = "CURRENT ROCK   SEARCHING"
-
     task.spawn(function()
-        local success, err = xpcall(function()
+        local success = xpcall(function()
             miningWorker(mySession)
         end, function(errorMessage)
             return tostring(errorMessage)
@@ -1657,14 +1360,11 @@ startButton.MouseButton1Click:Connect(function()
 
         if not success and SESSION == mySession then
             RUNNING = false
-            setStatus("FATAL ERROR: " .. tostring(err):sub(1, 50))
-
         elseif SESSION == mySession and RUNNING then
             RUNNING = false
-            setStatus("WORKER EXITED")
         end
     end)
-end)
+end
 
 local function stopMining()
     RUNNING = false
@@ -1678,40 +1378,28 @@ local function stopMining()
     nextTeleportAt = 0
     nextRockAt = 0
     lastRescan = 0
-
-    setStatus(AUTO_BOSS and "AUTO BOSS RUNNING" or "STOPPED")
-    rockInfo.Text = "CURRENT ROCK   --"
 end
 
+startButton.MouseButton1Click:Connect(startMining)
 stopButton.MouseButton1Click:Connect(stopMining)
 
 local function updateLayout(animate)
     if guiMinimized then
-        status.Visible = false
-        playerCounter.Visible = false
         zoneToggle.Visible = false
         search.Visible = false
         scroll.Visible = false
         selectedLabel.Visible = false
-        rockInfo.Visible = false
         startButton.Visible = false
         bossButton.Visible = false
         stopButton.Visible = false
 
         minimize.Text = "+"
-
-        tween(main, animate and 0.22 or 0, {
-            Size = UDim2.fromOffset(290, 35)
-        })
-
+        main.Size = UDim2.fromOffset(290, 35)
         return
     end
 
-    status.Visible = true
-    playerCounter.Visible = true
     zoneToggle.Visible = true
     selectedLabel.Visible = true
-    rockInfo.Visible = true
     startButton.Visible = true
     bossButton.Visible = true
     stopButton.Visible = true
@@ -1719,45 +1407,41 @@ local function updateLayout(animate)
     minimize.Text = "-"
 
     if selectorExpanded then
-        main.Size = UDim2.fromOffset(290, 310)
+        main.Size = UDim2.fromOffset(290, 251)
 
         zoneToggle.Text = "ZONES ▼"
-
         search.Visible = true
         scroll.Visible = true
 
-        search.Position = UDim2.fromOffset(10, 104)
-        scroll.Position = UDim2.fromOffset(10, 132)
+        search.Position = UDim2.fromOffset(10, 63)
+        scroll.Position = UDim2.fromOffset(10, 91)
 
-        selectedLabel.Position = UDim2.fromOffset(10, 228)
-        rockInfo.Position = UDim2.fromOffset(10, 246)
+        selectedLabel.Position = UDim2.fromOffset(10, 186)
 
-        startButton.Position = UDim2.fromOffset(10, 267)
-        bossButton.Position = UDim2.fromOffset(102, 267)
-        stopButton.Position = UDim2.fromOffset(194, 267)
+        startButton.Position = UDim2.fromOffset(10, 209)
+        bossButton.Position = UDim2.fromOffset(102, 209)
+        stopButton.Position = UDim2.fromOffset(194, 209)
     else
-        main.Size = UDim2.fromOffset(290, 195)
+        main.Size = UDim2.fromOffset(290, 129)
 
         zoneToggle.Text = "ZONES ▲"
-
         search.Visible = false
         scroll.Visible = false
 
-        selectedLabel.Position = UDim2.fromOffset(10, 107)
-        rockInfo.Position = UDim2.fromOffset(10, 125)
+        selectedLabel.Position = UDim2.fromOffset(10, 63)
 
-        startButton.Position = UDim2.fromOffset(10, 151)
-        bossButton.Position = UDim2.fromOffset(102, 151)
-        stopButton.Position = UDim2.fromOffset(194, 151)
+        startButton.Position = UDim2.fromOffset(10, 87)
+        bossButton.Position = UDim2.fromOffset(102, 87)
+        stopButton.Position = UDim2.fromOffset(194, 87)
     end
 
     if animate then
         local targetSize = main.Size
         main.Size = UDim2.fromOffset(290, 35)
 
-        tween(main, 0.25, {
+        TweenService:Create(main, TweenInfo.new(0.25), {
             Size = targetSize
-        })
+        }):Play()
     end
 end
 
@@ -1791,32 +1475,54 @@ close.MouseButton1Click:Connect(function()
 end)
 
 task.spawn(function()
-    local pulse = false
-
     while not UNLOADED and gui.Parent do
-        pulse = not pulse
-
-        tween(mainStroke, 0.7, {
-            Transparency = pulse and 0.2 or 0.55
-        })
-
-        task.wait(0.7)
-    end
-end)
-
-game:BindToClose(function()
-    if not UNLOADED then
+        task.wait(5)
         saveConfig()
     end
 end)
 
+task.spawn(function()
+    while not UNLOADED and gui.Parent do
+        task.wait(0.7)
+
+        TweenService:Create(mainStroke, TweenInfo.new(0.7), {
+            Transparency = 0.25
+        }):Play()
+
+        task.wait(0.7)
+
+        TweenService:Create(mainStroke, TweenInfo.new(0.7), {
+            Transparency = 0.55
+        }):Play()
+    end
+end)
+
+game:BindToClose(function()
+    saveConfig()
+end)
+
 updateSelection()
 refreshZoneSearch()
-updateLayout(false)
-
 updateMinerRows()
 updateAutoBuyButton()
 updateBossButton()
+updateLayout(false)
 
-setStatus("STOPPED")
 setPurchaseStatus("AUTO BUY: OFF")
+
+task.spawn(function()
+    task.wait(2)
+
+    if UNLOADED then return end
+
+    if resumeBoss then
+        startBoss()
+        task.wait(1)
+    end
+
+    if resumeBuy and not UNLOADED then
+        startAutoBuy()
+    end
+
+    saveConfig()
+end)
