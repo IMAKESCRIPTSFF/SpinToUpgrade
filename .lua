@@ -23,6 +23,13 @@ local SKIP_DURATION = 3
 local AUTO_BUY_INTERVAL = 0.1
 local CRAFT_REQUEST_DELAY = 0.5
 
+local BOSS_TELEPORT_INTERVAL = 0.10
+local BOSS_ATTACK_INTERVAL = 0.05
+
+local lastBossTeleport = 0
+local lastBossAttack = 0
+local activeBoss = nil
+
 local MinerNames = {
     "StoneMiner",
     "CoalMiner",
@@ -115,7 +122,7 @@ local guiMinimized = false
 
 local MineRemote = nil
 
-local CONFIG_FILE = "MultiZoneMinerV20.json"
+local CONFIG_FILE = "MultiZoneMinerV21.json"
 
 local savedConfig = {}
 local savedGuiPosition = nil
@@ -231,9 +238,14 @@ local function getDisplayName(name)
     return tostring(name or "Unknown")
 end
 
-local old = PlayerGui:FindFirstChild("MultiZoneMinerV20")
+local old = PlayerGui:FindFirstChild("MultiZoneMinerV21")
 if old then
     old:Destroy()
+end
+
+local oldV20 = PlayerGui:FindFirstChild("MultiZoneMinerV20")
+if oldV20 then
+    oldV20:Destroy()
 end
 
 local oldV19 = PlayerGui:FindFirstChild("MultiZoneMinerV19")
@@ -242,7 +254,7 @@ if oldV19 then
 end
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "MultiZoneMinerV20"
+gui.Name = "MultiZoneMinerV21"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = PlayerGui
@@ -349,7 +361,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -145, 0, 30)
 title.Position = UDim2.fromOffset(12, 3)
 title.BackgroundTransparency = 1
-title.Text = "AUTO MINER / V20"
+title.Text = "AUTO MINER / V21"
 title.TextColor3 = WHITE
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
@@ -953,7 +965,7 @@ autoBuyButton.MouseButton1Click:Connect(function()
     local mySession = BUY_SESSION
 
     updateAutoBuyButton()
-    setPurchaseStatus("AUTO BUY STARTED - 10 SEC CYCLE")
+    setPurchaseStatus("AUTO BUY STARTED")
 
     task.spawn(function()
         local success, err = xpcall(function()
@@ -1094,7 +1106,6 @@ local function getRockPart(rock)
         or rock:FindFirstChildWhichIsA("BasePart", true)
 end
 
--- Dynamic position: one stud above the ore's actual top surface.
 local function getPositionAboveOre(rock, root)
     if not rock or not root then
         return nil
@@ -1148,6 +1159,112 @@ local function getCharacterParts()
     end
 
     return humanoid, root
+end
+
+--// BOSS DETECTION AND FIST TARGETING
+
+local function getDiamondFist()
+    local adminEvents = workspace:FindFirstChild("AdminEvents")
+
+    if not adminEvents then
+        return nil
+    end
+
+    return adminEvents:FindFirstChild("DiamondFist")
+end
+
+local function getBossFistPart(boss, root)
+    if not boss then
+        return nil
+    end
+
+    if boss:IsA("BasePart") then
+        return boss
+    end
+
+    local candidates = {}
+
+    for _, obj in ipairs(boss:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            if string.find(string.lower(obj.Name), "fist", 1, true) then
+                table.insert(candidates, obj)
+            end
+        end
+    end
+
+    if #candidates > 0 then
+        if root then
+            table.sort(candidates, function(a, b)
+                return (a.Position - root.Position).Magnitude
+                    < (b.Position - root.Position).Magnitude
+            end)
+        end
+
+        return candidates[1]
+    end
+
+    if boss:IsA("Model") then
+        return boss.PrimaryPart
+            or boss:FindFirstChildWhichIsA("BasePart", true)
+    end
+
+    return nil
+end
+
+local function handleDiamondFist(mySession)
+    local boss = getDiamondFist()
+
+    if not boss then
+        return false
+    end
+
+    if not MineRemote then
+        setStatus("BOSS FOUND - MINEROCK MISSING")
+        return true
+    end
+
+    local humanoid, root = getCharacterParts()
+
+    if not humanoid or not root then
+        setStatus("WAITING FOR CHARACTER - BOSS")
+        return true
+    end
+
+    local fist = getBossFistPart(boss, root)
+
+    if not fist then
+        setStatus("BOSS FOUND - WAITING FOR FIST")
+        return true
+    end
+
+    activeBoss = boss
+
+    local now = os.clock()
+
+    -- Teleport directly into the fist's current position.
+    if now - lastBossTeleport >= BOSS_TELEPORT_INTERVAL then
+        lastBossTeleport = now
+
+        pcall(function()
+            root.CFrame = fist.CFrame
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+        end)
+    end
+
+    -- Send the exact boss object used in the supplied remote call.
+    if now - lastBossAttack >= BOSS_ATTACK_INTERVAL then
+        lastBossAttack = now
+
+        pcall(function()
+            MineRemote:FireServer(boss)
+        end)
+    end
+
+    setStatus("BOSS ACTIVE - INSIDE FIST")
+    rockInfo.Text = "CURRENT TARGET   DIAMOND FIST"
+
+    return true
 end
 
 local function findRock(zoneName)
@@ -1235,6 +1352,30 @@ end
 local function miningCycle(mySession)
     if not RUNNING or SESSION ~= mySession then
         return
+    end
+
+    -- Boss takes priority over all normal mining.
+    if handleDiamondFist(mySession) then
+        return
+    end
+
+    -- Reset mining state after the boss disappears.
+    if activeBoss then
+        activeBoss = nil
+
+        currentRock = nil
+        trackedRock = nil
+        trackedRockStartHP = nil
+        trackedRockStartTime = 0
+
+        nextTeleportAt = 0
+        nextRockAt = 0
+        lastRescan = 0
+
+        lastBossTeleport = 0
+        lastBossAttack = 0
+
+        setStatus("BOSS GONE - RESUMING MINING")
     end
 
     local zoneName = selectedZone
@@ -1463,6 +1604,10 @@ startButton.MouseButton1Click:Connect(function()
     trackedRockStartHP = nil
     trackedRockStartTime = 0
 
+    activeBoss = nil
+    lastBossTeleport = 0
+    lastBossAttack = 0
+
     nextTeleportAt = 0
     nextRockAt = 0
     lastRescan = 0
@@ -1498,6 +1643,8 @@ local function stopMining()
     trackedRock = nil
     trackedRockStartHP = nil
     trackedRockStartTime = 0
+
+    activeBoss = nil
 
     nextTeleportAt = 0
     nextRockAt = 0
@@ -1637,7 +1784,10 @@ updateAutoBuyButton()
 setStatus("STOPPED")
 setPurchaseStatus("AUTO BUY: OFF")
 
-print("Auto Miner loaded")
+print("Auto Miner V21 loaded")
 print("Available zones: " .. #availableZones)
 print("Available miners: " .. #MinerNames)
 print("Auto Buy interval: " .. AUTO_BUY_INTERVAL .. " seconds")
+print("Boss detection: DiamondFist")
+print("Boss teleport interval: " .. BOSS_TELEPORT_INTERVAL)
+print("Boss attack interval: " .. BOSS_ATTACK_INTERVAL)
