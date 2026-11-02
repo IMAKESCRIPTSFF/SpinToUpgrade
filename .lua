@@ -1,9 +1,6 @@
---// MULTI-ZONE AUTO MINER V14
+--// MULTI-ZONE AUTO MINER V17
+--// Periodic rescanning + worker error recovery
 --// Real Executor
---// Teleport verification and retry
---// Stay on rock until destroyed
---// 21 zones, exclusive selection
---// Draggable, minimize, hide zones, X unload
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -12,18 +9,33 @@ local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 local ZonesFolder = workspace:WaitForChild("Zones")
 
-local MineRemote = ReplicatedStorage
-    :WaitForChild("Shared")
-    :WaitForChild("Remotes")
-    :WaitForChild("MineRock")
+-- Resolve the mining remote only when Start is pressed.
+-- This prevents a missing/late remote from blocking GUI creation.
+local MineRemote = nil
+
+local function resolveMineRemote()
+    local shared = ReplicatedStorage:FindFirstChild("Shared")
+    local remotes = shared and shared:FindFirstChild("Remotes")
+    local remote = remotes and remotes:FindFirstChild("MineRock")
+
+    if remote and (remote:IsA("RemoteEvent")) then
+        MineRemote = remote
+        return true
+    end
+
+    MineRemote = nil
+    return false
+end
 
 -- SETTINGS
 local MINING_INTERVAL = 0.1
-local AFTER_TELEPORT_WAIT = 0.2
-local TELEPORT_RETRY_DELAY = 0.2
+local TELEPORT_RETRY_DELAY = 2.5
 local TELEPORT_SUCCESS_DISTANCE = 18
-local NEXT_ROCK_DELAY = 0.2
+
+local NEXT_ROCK_DELAY = 0
 local SCAN_DELAY = 0.4
+local RESCAN_INTERVAL = 2
+local ERROR_RETRY_DELAY = 1
 
 -- ZONES
 local zoneOrder = {
@@ -55,12 +67,16 @@ local RUNNING = false
 local UNLOADED = false
 local SESSION = 0
 
-local selectedZone
-local currentRock
-local teleportedRock
-local teleportedCharacter
+local selectedZone = nil
+local currentRock = nil
+local trackedRock = nil
+local trackedRockStartHP = nil
+local trackedRockStartTime = 0
+local skippedRocks = setmetatable({}, { __mode = "k" })
+
 local nextTeleportAt = 0
 local nextRockAt = 0
+local lastRescan = 0
 
 local availableZones = {}
 local zoneRows = {}
@@ -89,23 +105,30 @@ if not selectedZone and availableZones[1] then
 end
 
 local function getDisplayName(name)
-    for _, entry in ipairs(availableZones) do
+    if name == nil then
+        return "Unknown zone"
+    end
+
+    for index = 1, #availableZones do
+        local entry = availableZones[index]
         if entry.Folder == name then
             return entry.Display
         end
     end
+
     return tostring(name)
 end
 
 -- REMOVE OLD GUI
-local old = PlayerGui:FindFirstChild("MultiZoneMinerV14")
+local old = PlayerGui:FindFirstChild("MultiZoneMinerV17")
+
 if old then
     old:Destroy()
 end
 
 -- GUI
 local gui = Instance.new("ScreenGui")
-gui.Name = "MultiZoneMinerV14"
+gui.Name = "MultiZoneMinerV17"
 gui.ResetOnSpawn = false
 gui.Parent = PlayerGui
 
@@ -125,17 +148,19 @@ main.Draggable = true
 main.Parent = gui
 addCorner(main)
 
+-- TITLE
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -85, 0, 30)
 title.Position = UDim2.fromOffset(10, 4)
 title.BackgroundTransparency = 1
-title.Text = "Multi-Zone Auto Miner V14"
+title.Text = "Multi-Zone Auto Miner V17"
 title.TextColor3 = Color3.new(1, 1, 1)
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = main
 
+-- MINIMIZE
 local minimize = Instance.new("TextButton")
 minimize.Size = UDim2.fromOffset(25, 25)
 minimize.Position = UDim2.new(1, -60, 0, 5)
@@ -147,6 +172,7 @@ minimize.TextSize = 16
 minimize.Parent = main
 addCorner(minimize)
 
+-- CLOSE
 local close = Instance.new("TextButton")
 close.Size = UDim2.fromOffset(25, 25)
 close.Position = UDim2.new(1, -30, 0, 5)
@@ -158,6 +184,7 @@ close.TextSize = 14
 close.Parent = main
 addCorner(close)
 
+-- STATUS
 local status = Instance.new("TextLabel")
 status.Size = UDim2.new(1, -20, 0, 20)
 status.Position = UDim2.fromOffset(10, 34)
@@ -167,8 +194,10 @@ status.TextColor3 = Color3.fromRGB(220, 220, 220)
 status.TextSize = 11
 status.Font = Enum.Font.Gotham
 status.TextXAlignment = Enum.TextXAlignment.Left
+status.TextTruncate = Enum.TextTruncate.AtEnd
 status.Parent = main
 
+-- ZONE TOGGLE
 local zoneToggle = Instance.new("TextButton")
 zoneToggle.Size = UDim2.new(1, -20, 0, 25)
 zoneToggle.Position = UDim2.fromOffset(10, 57)
@@ -180,6 +209,7 @@ zoneToggle.Font = Enum.Font.GothamBold
 zoneToggle.Parent = main
 addCorner(zoneToggle)
 
+-- ZONE LIST
 local scroll = Instance.new("ScrollingFrame")
 scroll.Size = UDim2.new(1, -20, 0, 100)
 scroll.Position = UDim2.fromOffset(10, 86)
@@ -202,6 +232,7 @@ layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     )
 end)
 
+-- SELECTED ZONE
 local selectedLabel = Instance.new("TextLabel")
 selectedLabel.Size = UDim2.new(1, -20, 0, 18)
 selectedLabel.Position = UDim2.fromOffset(10, 190)
@@ -212,6 +243,7 @@ selectedLabel.Font = Enum.Font.Gotham
 selectedLabel.TextXAlignment = Enum.TextXAlignment.Left
 selectedLabel.Parent = main
 
+-- BUTTON CREATOR
 local function makeButton(text, x, y, color)
     local button = Instance.new("TextButton")
     button.Size = UDim2.fromOffset(140, 35)
@@ -222,17 +254,31 @@ local function makeButton(text, x, y, color)
     button.TextSize = 12
     button.Font = Enum.Font.GothamBold
     button.Parent = main
+
     addCorner(button)
+
     return button
 end
 
 local startButton = makeButton(
-    "START", 10, 214, Color3.fromRGB(40, 145, 75)
+    "START",
+    10,
+    214,
+    Color3.fromRGB(40, 145, 75)
 )
 
 local stopButton = makeButton(
-    "STOP", 160, 214, Color3.fromRGB(160, 55, 55)
+    "STOP",
+    160,
+    214,
+    Color3.fromRGB(160, 55, 55)
 )
+
+local function setStatus(message)
+    if not UNLOADED and status and status.Parent then
+        status.Text = tostring(message)
+    end
+end
 
 -- ZONE SELECTION
 local function updateSelection()
@@ -264,6 +310,7 @@ for index, entry in ipairs(availableZones) do
     row.TextXAlignment = Enum.TextXAlignment.Left
     row.LayoutOrder = index
     row.Parent = scroll
+
     addCorner(row, 5)
 
     zoneRows[folderName] = row
@@ -272,13 +319,12 @@ for index, entry in ipairs(availableZones) do
         selectedZone = folderName
 
         currentRock = nil
-        teleportedRock = nil
-        teleportedCharacter = nil
         nextTeleportAt = 0
         nextRockAt = 0
+        lastRescan = 0
 
         updateSelection()
-        status.Text = "Selected: " .. getDisplayName(folderName)
+        setStatus("Selected: " .. getDisplayName(folderName))
     end)
 end
 
@@ -287,6 +333,7 @@ updateSelection()
 -- ROCK HELPERS
 local function getRocksFolder(zoneName)
     local zone = ZonesFolder:FindFirstChild(zoneName)
+
     return zone and zone:FindFirstChild("Rocks")
 end
 
@@ -310,10 +357,9 @@ local function validRock(rock, zoneName)
         return false
     end
 
-    if rock:GetAttribute("ZoneId") ~= zoneName then
-        return false
-    end
-
+    -- The rock's parent folder already identifies its zone.
+    -- Some ores may have a missing or inconsistent ZoneId attribute,
+    -- so do not reject a rock solely because that attribute differs.
     local hp = rock:GetAttribute("HP")
 
     return typeof(hp) == "number" and hp > 0
@@ -326,14 +372,15 @@ local function findRock(zoneName)
         return nil
     end
 
-    local bestRock
+    local bestRock = nil
     local lowestHP = math.huge
 
     for _, rock in ipairs(folder:GetChildren()) do
         if validRock(rock, zoneName) then
             local hp = rock:GetAttribute("HP")
 
-            if hp < lowestHP then
+            local skipUntil = skippedRocks[rock] or 0
+            if os.clock() >= skipUntil and hp < lowestHP then
                 lowestHP = hp
                 bestRock = rock
             end
@@ -343,6 +390,7 @@ local function findRock(zoneName)
     return bestRock
 end
 
+-- CHARACTER HELPERS
 local function getCharacterParts()
     local character = Player.Character
 
@@ -364,142 +412,217 @@ local function getDistance(root, part)
     return (root.Position - part.Position).Magnitude
 end
 
--- MINING WORKER
-local function miningWorker(mySession)
-    while RUNNING and not UNLOADED and SESSION == mySession do
-        local zoneName = selectedZone
+-- PERIODIC SCAN
+local function rescanZone(zoneName)
+    local folder = getRocksFolder(zoneName)
 
-        if not zoneName then
-            status.Text = "No zone selected"
+    if not folder then
+        currentRock = nil
+        return false
+    end
+
+    -- Keep a living target. Clear it only if destroyed or removed.
+    if currentRock and not validRock(currentRock, zoneName) then
+        currentRock = nil
+        trackedRock = nil
+        trackedRockStartHP = nil
+        trackedRockStartTime = 0
+        nextTeleportAt = 0
+        nextRockAt = os.clock() + NEXT_ROCK_DELAY
+    end
+
+    -- Do not select a second target while the existing one is alive.
+    if not currentRock and os.clock() >= nextRockAt then
+        currentRock = findRock(zoneName)
+        nextTeleportAt = 0
+    end
+
+    return true
+end
+
+-- ONE MINING CYCLE
+local function miningCycle(mySession)
+    if not RUNNING or SESSION ~= mySession then
+        return
+    end
+
+    local zoneName = selectedZone
+
+    if not zoneName then
+        setStatus("No zone selected")
+        task.wait(SCAN_DELAY)
+        return
+    end
+
+    -- RESCAN EVERY TWO SECONDS
+    local now = os.clock()
+
+    if now - lastRescan >= RESCAN_INTERVAL then
+        lastRescan = now
+
+        if not rescanZone(zoneName) then
+            setStatus("Rocks folder missing - rescanning")
             task.wait(SCAN_DELAY)
-            continue
+            return
+        end
+    end
+
+    -- Search again whenever no target is active.
+    if not currentRock and os.clock() >= nextRockAt then
+        currentRock = findRock(zoneName)
+        nextTeleportAt = 0
+    end
+
+    if not currentRock then
+        setStatus("Scanning " .. getDisplayName(zoneName) .. "...")
+        task.wait(SCAN_DELAY)
+        return
+    end
+
+    local rock = currentRock
+
+    if not validRock(rock, zoneName) then
+        currentRock = nil
+        nextTeleportAt = 0
+        return
+    end
+
+    local humanoid, root = getCharacterParts()
+    local part = getRockPart(rock)
+
+    if not humanoid or not root or not part then
+        setStatus("Waiting for character...")
+        task.wait(SCAN_DELAY)
+        return
+    end
+
+    -- TELEPORT ATTEMPT
+    local distance = getDistance(root, part)
+
+    if distance > TELEPORT_SUCCESS_DISTANCE then
+        if os.clock() < nextTeleportAt then
+            setStatus("Waiting for movement...")
+            task.wait(0.2)
+            return
         end
 
-        -- Check that the selected zone still contains the current target.
-        if currentRock and not validRock(currentRock, zoneName) then
-            currentRock = nil
-            teleportedRock = nil
-            teleportedCharacter = nil
-            nextRockAt = os.clock() + NEXT_ROCK_DELAY
-            status.Text = "Rock destroyed - scanning next"
+        setStatus("Movement attempt: " .. getDisplayName(zoneName))
+
+        -- Client-side movement may be rejected by the game server.
+        root.CFrame = part.CFrame * CFrame.new(0, 0, 3)
+
+        -- No post-teleport wait: verify immediately.
+
+        if not RUNNING or SESSION ~= mySession
+            or selectedZone ~= zoneName then
+            return
         end
 
-        -- Find a new target only after the previous one is gone.
-        if not currentRock then
-            if os.clock() < nextRockAt then
-                task.wait(0.1)
-                continue
-            end
-
-            currentRock = findRock(zoneName)
-
-            if not currentRock then
-                status.Text = "Waiting for "
-                    .. getDisplayName(zoneName)
-                    .. " rocks..."
-                task.wait(SCAN_DELAY)
-                continue
-            end
-        end
-
-        local rock = currentRock
-
-        if not validRock(rock, zoneName) then
-            task.wait(0.1)
-            continue
-        end
-
-        local humanoid, root = getCharacterParts()
-        local part = getRockPart(rock)
+        humanoid, root = getCharacterParts()
+        part = getRockPart(rock)
 
         if not humanoid or not root or not part then
-            status.Text = "Waiting for character..."
             task.wait(SCAN_DELAY)
-            continue
+            return
         end
 
-        -- Reset teleport tracking if the character respawned.
-        if teleportedCharacter ~= Player.Character then
-            teleportedRock = nil
-            teleportedCharacter = Player.Character
-            nextTeleportAt = 0
-        end
+        distance = getDistance(root, part)
 
-        local distance = getDistance(root, part)
-
-        -- TELEPORT / VERIFY
         if distance > TELEPORT_SUCCESS_DISTANCE then
-            if os.clock() >= nextTeleportAt then
-                status.Text = "Teleport attempt: "
-                    .. getDisplayName(zoneName)
-
-                -- Local movement may be rejected by the game server.
-                -- This does not bypass server-side movement checks.
-                root.CFrame = part.CFrame * CFrame.new(0, 0, 3)
-
-                task.wait(AFTER_TELEPORT_WAIT)
-
-                if not RUNNING or SESSION ~= mySession then
-                    break
-                end
-
-                humanoid, root = getCharacterParts()
-                part = getRockPart(rock)
-
-                if not humanoid or not root or not part then
-                    task.wait(SCAN_DELAY)
-                    continue
-                end
-
-                distance = getDistance(root, part)
-
-                if distance <= TELEPORT_SUCCESS_DISTANCE then
-                    teleportedRock = rock
-                    teleportedCharacter = Player.Character
-                    status.Text = "Reached rock - mining"
-                else
-                    teleportedRock = nil
-                    nextTeleportAt = os.clock() + TELEPORT_RETRY_DELAY
-                    status.Text = "Movement not accepted - retry cooldown"
-                end
-            else
-                status.Text = "Waiting to retry movement..."
-                task.wait(0.2)
-            end
-
-            continue
+            nextTeleportAt = os.clock() + TELEPORT_RETRY_DELAY
+            setStatus("Movement not accepted - waiting")
+            return
         end
 
-        -- We are close enough to mine this same rock.
-        teleportedRock = rock
+        nextTeleportAt = 0
+        setStatus("Reached rock - mining")
+        return
+    end
 
-        local oldHP = rock:GetAttribute("HP")
+    -- MINE THE CURRENT ROCK
+    local oldHP = rock:GetAttribute("HP")
 
-        pcall(function()
-            MineRemote:FireServer(rock)
+    if trackedRock ~= rock then
+        trackedRock = rock
+        trackedRockStartHP = oldHP
+        trackedRockStartTime = os.clock()
+    end
+
+    local success, err = pcall(function()
+        MineRemote:FireServer(rock)
+    end)
+
+    if not success then
+        setStatus("Mine error: " .. tostring(err):sub(1, 65))
+        task.wait(ERROR_RETRY_DELAY)
+        return
+    end
+
+    task.wait(MINING_INTERVAL)
+
+    if not RUNNING or SESSION ~= mySession
+        or selectedZone ~= zoneName then
+        return
+    end
+
+    -- If this target has taken no damage within 0.5 seconds,
+    -- temporarily skip it and move to another ore.
+    if validRock(rock, zoneName) then
+        local newHP = rock:GetAttribute("HP")
+
+        if newHP >= trackedRockStartHP
+            and os.clock() - trackedRockStartTime >= 0.5 then
+            skippedRocks[rock] = os.clock() + 3
+            currentRock = nil
+            trackedRock = nil
+            trackedRockStartHP = nil
+            trackedRockStartTime = 0
+            nextTeleportAt = 0
+            nextRockAt = 0
+            setStatus("No damage in 0.5s - switching ore")
+            return
+        end
+
+        setStatus(
+            getDisplayName(zoneName)
+            .. " | HP: "
+            .. tostring(newHP)
+        )
+    else
+        currentRock = nil
+        trackedRock = nil
+        trackedRockStartHP = nil
+        trackedRockStartTime = 0
+        nextTeleportAt = 0
+        nextRockAt = os.clock() + NEXT_ROCK_DELAY
+        lastRescan = 0
+
+        setStatus("Rock destroyed - searching for next rock")
+    end
+end
+
+-- WORKER SUPERVISOR
+local function miningWorker(mySession)
+    while RUNNING
+        and not UNLOADED
+        and SESSION == mySession do
+
+        local success, err = xpcall(function()
+            miningCycle(mySession)
+        end, function(errorMessage)
+            return tostring(errorMessage)
         end)
 
-        task.wait(MINING_INTERVAL)
+        if not success then
+            setStatus("Worker error: " .. tostring(err):sub(1, 90))
+            task.wait(ERROR_RETRY_DELAY)
+        end
 
         if not RUNNING or SESSION ~= mySession then
             break
         end
 
-        if not validRock(rock, zoneName) then
-            currentRock = nil
-            teleportedRock = nil
-            teleportedCharacter = nil
-            nextRockAt = os.clock() + NEXT_ROCK_DELAY
-            status.Text = "Rock destroyed - next rock soon"
-        else
-            local newHP = rock:GetAttribute("HP")
-
-            status.Text = getDisplayName(zoneName)
-                .. " | HP: "
-                .. tostring(newHP)
-
-            -- Do not abandon a rock just because HP did not change.
-        end
+        task.wait(0.05)
     end
 end
 
@@ -510,7 +633,12 @@ startButton.MouseButton1Click:Connect(function()
     end
 
     if not selectedZone then
-        status.Text = "No zone available"
+        setStatus("No zone available")
+        return
+    end
+
+    if not resolveMineRemote() then
+        setStatus("MineRock RemoteEvent not found")
         return
     end
 
@@ -518,15 +646,32 @@ startButton.MouseButton1Click:Connect(function()
     RUNNING = true
 
     currentRock = nil
-    teleportedRock = nil
-    teleportedCharacter = nil
+    trackedRock = nil
+    trackedRockStartHP = nil
+    trackedRockStartTime = 0
     nextTeleportAt = 0
     nextRockAt = 0
-
-    status.Text = "Starting: " .. getDisplayName(selectedZone)
+    lastRescan = 0
 
     local mySession = SESSION
-    task.spawn(miningWorker, mySession)
+
+    setStatus("Starting: " .. getDisplayName(selectedZone))
+
+    task.spawn(function()
+        local success, err = xpcall(function()
+            miningWorker(mySession)
+        end, function(errorMessage)
+            return tostring(errorMessage)
+        end)
+
+        if not success and SESSION == mySession then
+            RUNNING = false
+            setStatus("Fatal worker error: " .. tostring(err):sub(1, 80))
+        elseif SESSION == mySession and RUNNING then
+            RUNNING = false
+            setStatus("Worker exited unexpectedly")
+        end
+    end)
 end)
 
 -- STOP
@@ -535,12 +680,14 @@ stopButton.MouseButton1Click:Connect(function()
     SESSION += 1
 
     currentRock = nil
-    teleportedRock = nil
-    teleportedCharacter = nil
+    trackedRock = nil
+    trackedRockStartHP = nil
+    trackedRockStartTime = 0
     nextTeleportAt = 0
     nextRockAt = 0
+    lastRescan = 0
 
-    status.Text = "Stopped"
+    setStatus("Stopped")
 end)
 
 -- GUI LAYOUT
@@ -563,6 +710,7 @@ local function updateLayout()
     zoneToggle.Visible = true
     startButton.Visible = true
     stopButton.Visible = true
+
     minimize.Text = "-"
 
     if selectorExpanded then
@@ -588,20 +736,24 @@ local function updateLayout()
     end
 end
 
+-- HIDE / SHOW ZONES
 zoneToggle.MouseButton1Click:Connect(function()
     selectorExpanded = not selectorExpanded
     updateLayout()
 end)
 
+-- MINIMIZE / RESTORE
 minimize.MouseButton1Click:Connect(function()
     guiMinimized = not guiMinimized
     updateLayout()
 end)
 
+-- UNLOAD
 close.MouseButton1Click:Connect(function()
     UNLOADED = true
     RUNNING = false
     SESSION += 1
+
     gui:Destroy()
 end)
 
