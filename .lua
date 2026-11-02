@@ -1,13 +1,12 @@
-
---// MULTI-ZONE AUTO MINER V18
---// Compact Black & Neon White GUI
---// Auto Configuration Save
---// Searchable Zones + Player Counter
+--// MULTI-ZONE AUTO MINER V20
+--// Auto Buy Selected Miners - 10 Second Cycles
+--// Original V18 Mining Features
 --// Real Executor
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
 
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
@@ -28,6 +27,45 @@ local ERROR_RETRY_DELAY = 1
 
 local NO_DAMAGE_TIMEOUT = 0.5
 local SKIP_DURATION = 3
+
+local AUTO_BUY_INTERVAL = 10
+local CRAFT_REQUEST_DELAY = 0.4
+
+--==================================================
+-- MINER CATALOGUE
+--==================================================
+
+local MinerNames = {
+    "StoneMiner",
+    "CoalMiner",
+    "CopperMiner",
+    "IronMiner",
+    "GoldMiner",
+    "RubyMiner",
+    "SapphireMiner",
+    "EmeraldMiner",
+    "DiamondMiner",
+    "VoidstoneMiner",
+    "ToxiteMiner",
+    "StarliteMiner",
+    "CelestiumMiner",
+    "MoonstoneMiner",
+    "PrismiteMiner",
+    "AuroriumMiner",
+    "FrostiteMiner",
+    "AquamarineMiner",
+    "DragonscaleMiner",
+    "NeoniteMiner",
+    "DarkMatterMiner",
+    "BrassiteMiner",
+    "PixeliteMiner",
+    "HaloiteMiner",
+    "NebuliteMiner",
+    "SoulstoneMiner",
+    "PumpkinMiner"
+}
+
+local selectedMiners = {}
 
 --==================================================
 -- THEME
@@ -76,6 +114,9 @@ local RUNNING = false
 local UNLOADED = false
 local SESSION = 0
 
+local AUTO_BUY = false
+local BUY_SESSION = 0
+
 local selectedZone = nil
 local currentRock = nil
 
@@ -91,6 +132,7 @@ local lastRescan = 0
 
 local availableZones = {}
 local zoneRows = {}
+local minerRows = {}
 
 local selectorExpanded = true
 local guiMinimized = false
@@ -98,12 +140,10 @@ local guiMinimized = false
 local MineRemote = nil
 
 --==================================================
--- CONFIGURATION SAVE SYSTEM
+-- CONFIGURATION
 --==================================================
 
-local HttpService = game:GetService("HttpService")
-
-local CONFIG_FILE = "MultiZoneMinerV18.json"
+local CONFIG_FILE = "MultiZoneMinerV20.json"
 
 local savedConfig = {}
 local savedGuiPosition = nil
@@ -135,17 +175,13 @@ local function saveConfig()
         SelectedZone = selectedZone,
         SelectorExpanded = selectorExpanded,
         GuiMinimized = guiMinimized,
-        GuiPosition = savedGuiPosition
+        GuiPosition = savedGuiPosition,
+        SelectedMiners = selectedMiners
     }
 
-    local success = pcall(function()
-        writefile(
-            CONFIG_FILE,
-            HttpService:JSONEncode(config)
-        )
+    return pcall(function()
+        writefile(CONFIG_FILE, HttpService:JSONEncode(config))
     end)
-
-    return success
 end
 
 local function queueSave()
@@ -164,8 +200,17 @@ local function queueSave()
     end)
 end
 
+loadConfig()
+
+if type(savedConfig.SelectedMiners) == "table" then
+    for _, name in ipairs(MinerNames) do
+        selectedMiners[name] =
+            savedConfig.SelectedMiners[name] == true
+    end
+end
+
 --==================================================
--- DETECT AVAILABLE ZONES
+-- DETECT ZONES
 --==================================================
 
 for _, entry in ipairs(zoneOrder) do
@@ -186,10 +231,6 @@ end
 if not selectedZone and availableZones[1] then
     selectedZone = availableZones[1].Folder
 end
-
--- Load saved settings AFTER detecting zones.
-
-loadConfig()
 
 if savedConfig.SelectedZone then
     for _, entry in ipairs(availableZones) do
@@ -226,18 +267,22 @@ end
 -- REMOVE OLD GUI
 --==================================================
 
-local old = PlayerGui:FindFirstChild("MultiZoneMinerV18")
-
+local old = PlayerGui:FindFirstChild("MultiZoneMinerV20")
 if old then
     old:Destroy()
 end
 
+local oldV19 = PlayerGui:FindFirstChild("MultiZoneMinerV19")
+if oldV19 then
+    oldV19:Destroy()
+end
+
 --==================================================
--- GUI CREATION
+-- GUI HELPERS
 --==================================================
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "MultiZoneMinerV18"
+gui.Name = "MultiZoneMinerV20"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = PlayerGui
@@ -259,20 +304,44 @@ local function stroke(object, color, thickness, transparency)
 end
 
 local function tween(object, duration, properties)
-    local info = TweenInfo.new(
-        duration,
-        Enum.EasingStyle.Quint,
-        Enum.EasingDirection.Out
-    )
-
     local animation = TweenService:Create(
         object,
-        info,
+        TweenInfo.new(
+            duration,
+            Enum.EasingStyle.Quint,
+            Enum.EasingDirection.Out
+        ),
         properties
     )
 
     animation:Play()
     return animation
+end
+
+local function addHover(button, normalColor, hoverColor, outline)
+    button.MouseEnter:Connect(function()
+        tween(button, 0.15, {
+            BackgroundColor3 = hoverColor
+        })
+
+        if outline then
+            tween(outline, 0.15, {
+                Transparency = 0
+            })
+        end
+    end)
+
+    button.MouseLeave:Connect(function()
+        tween(button, 0.15, {
+            BackgroundColor3 = normalColor
+        })
+
+        if outline then
+            tween(outline, 0.15, {
+                Transparency = 0.6
+            })
+        end
+    end)
 end
 
 --==================================================
@@ -325,15 +394,28 @@ end)
 --==================================================
 
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -85, 0, 30)
+title.Size = UDim2.new(1, -145, 0, 30)
 title.Position = UDim2.fromOffset(12, 3)
 title.BackgroundTransparency = 1
-title.Text = "AUTO MINER  /  V18"
+title.Text = "AUTO MINER / V20"
 title.TextColor3 = WHITE
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = main
+
+local minersOpenButton = Instance.new("TextButton")
+minersOpenButton.Size = UDim2.fromOffset(48, 23)
+minersOpenButton.Position = UDim2.new(1, -113, 0, 5)
+minersOpenButton.BackgroundColor3 = PANEL2
+minersOpenButton.Text = "MINERS"
+minersOpenButton.TextColor3 = WHITE
+minersOpenButton.TextSize = 9
+minersOpenButton.Font = Enum.Font.GothamBold
+minersOpenButton.Parent = main
+
+corner(minersOpenButton, 5)
+local minersOpenStroke = stroke(minersOpenButton, WHITE, 1, 0.65)
 
 local minimize = Instance.new("TextButton")
 minimize.Size = UDim2.fromOffset(24, 23)
@@ -361,38 +443,9 @@ close.Parent = main
 corner(close, 5)
 local closeStroke = stroke(close, WHITE, 1, 0.4)
 
---==================================================
--- HOVER ANIMATIONS
---==================================================
-
-local function addHover(button, normalColor, hoverColor, outline)
-    button.MouseEnter:Connect(function()
-        tween(button, 0.15, {
-            BackgroundColor3 = hoverColor
-        })
-
-        if outline then
-            tween(outline, 0.15, {
-                Transparency = 0
-            })
-        end
-    end)
-
-    button.MouseLeave:Connect(function()
-        tween(button, 0.15, {
-            BackgroundColor3 = normalColor
-        })
-
-        if outline then
-            tween(outline, 0.15, {
-                Transparency = 0.6
-            })
-        end
-    end)
-end
-
 addHover(minimize, PANEL2, Color3.fromRGB(48, 48, 48), minimizeStroke)
 addHover(close, PANEL2, Color3.fromRGB(65, 65, 65), closeStroke)
+addHover(minersOpenButton, PANEL2, Color3.fromRGB(48, 48, 48), minersOpenStroke)
 
 --==================================================
 -- STATUS
@@ -402,17 +455,13 @@ local status = Instance.new("TextLabel")
 status.Size = UDim2.new(1, -20, 0, 19)
 status.Position = UDim2.fromOffset(10, 35)
 status.BackgroundTransparency = 1
-status.Text = "●  STOPPED"
+status.Text = "● STOPPED"
 status.TextColor3 = GREY
 status.TextSize = 11
 status.Font = Enum.Font.GothamBold
 status.TextXAlignment = Enum.TextXAlignment.Left
 status.TextTruncate = Enum.TextTruncate.AtEnd
 status.Parent = main
-
---==================================================
--- PLAYER COUNTER
---==================================================
 
 local playerCounter = Instance.new("TextLabel")
 playerCounter.Size = UDim2.new(1, -20, 0, 17)
@@ -425,25 +474,25 @@ playerCounter.TextXAlignment = Enum.TextXAlignment.Left
 playerCounter.Parent = main
 
 local function updatePlayerCount()
-    if UNLOADED then return end
-
-    playerCounter.Text = "PLAYERS ONLINE   " .. #Players:GetPlayers()
+    if not UNLOADED then
+        playerCounter.Text =
+            "PLAYERS ONLINE   " .. #Players:GetPlayers()
+    end
 end
 
 Players.PlayerAdded:Connect(updatePlayerCount)
 Players.PlayerRemoving:Connect(updatePlayerCount)
-
 updatePlayerCount()
 
 --==================================================
--- ZONE TOGGLE
+-- ZONE SELECTOR
 --==================================================
 
 local zoneToggle = Instance.new("TextButton")
 zoneToggle.Size = UDim2.new(1, -20, 0, 23)
 zoneToggle.Position = UDim2.fromOffset(10, 76)
 zoneToggle.BackgroundColor3 = PANEL2
-zoneToggle.Text = "ZONES  ▼"
+zoneToggle.Text = "ZONES ▼"
 zoneToggle.TextColor3 = WHITE
 zoneToggle.TextSize = 10
 zoneToggle.Font = Enum.Font.GothamBold
@@ -451,12 +500,7 @@ zoneToggle.Parent = main
 
 corner(zoneToggle, 5)
 local zoneToggleStroke = stroke(zoneToggle, WHITE, 1, 0.75)
-
 addHover(zoneToggle, PANEL2, Color3.fromRGB(42, 42, 42), zoneToggleStroke)
-
---==================================================
--- SEARCH BOX
---==================================================
 
 local search = Instance.new("TextBox")
 search.Size = UDim2.new(1, -20, 0, 23)
@@ -479,10 +523,6 @@ stroke(search, WHITE, 1, 0.8)
 local searchPadding = Instance.new("UIPadding")
 searchPadding.PaddingLeft = UDim.new(0, 8)
 searchPadding.Parent = search
-
---==================================================
--- ZONE SCROLL
---==================================================
 
 local scroll = Instance.new("ScrollingFrame")
 scroll.Size = UDim2.new(1, -20, 0, 90)
@@ -516,10 +556,6 @@ layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     )
 end)
 
---==================================================
--- SELECTED ZONE
---==================================================
-
 local selectedLabel = Instance.new("TextLabel")
 selectedLabel.Size = UDim2.new(1, -20, 0, 17)
 selectedLabel.Position = UDim2.fromOffset(10, 228)
@@ -529,10 +565,6 @@ selectedLabel.TextSize = 10
 selectedLabel.Font = Enum.Font.GothamBold
 selectedLabel.TextXAlignment = Enum.TextXAlignment.Left
 selectedLabel.Parent = main
-
---==================================================
--- ROCK HP
---==================================================
 
 local rockInfo = Instance.new("TextLabel")
 rockInfo.Size = UDim2.new(1, -20, 0, 16)
@@ -546,12 +578,11 @@ rockInfo.TextXAlignment = Enum.TextXAlignment.Left
 rockInfo.Parent = main
 
 --==================================================
--- START / STOP BUTTONS
+-- MINING BUTTONS
 --==================================================
 
 local function makeButton(text, x, color)
     local button = Instance.new("TextButton")
-
     button.Size = UDim2.fromOffset(130, 32)
     button.Position = UDim2.fromOffset(x, 267)
     button.BackgroundColor3 = color
@@ -563,7 +594,6 @@ local function makeButton(text, x, color)
     button.Parent = main
 
     corner(button, 6)
-
     local outline = stroke(button, WHITE, 1, 0.7)
 
     return button, outline
@@ -585,6 +615,457 @@ addHover(startButton, Color3.fromRGB(28, 28, 28), Color3.fromRGB(65, 65, 65), st
 addHover(stopButton, Color3.fromRGB(28, 28, 28), Color3.fromRGB(65, 65, 65), stopStroke)
 
 --==================================================
+-- MINER SELECTION WINDOW
+--==================================================
+
+local minerWindow = Instance.new("Frame")
+minerWindow.Name = "MinerSelection"
+minerWindow.Size = UDim2.fromOffset(260, 405)
+minerWindow.Position = UDim2.new(0.5, 155, 0.5, -202)
+minerWindow.BackgroundColor3 = BLACK
+minerWindow.BorderSizePixel = 0
+minerWindow.Active = true
+minerWindow.Draggable = true
+minerWindow.Visible = false
+minerWindow.ClipsDescendants = true
+minerWindow.Parent = gui
+
+corner(minerWindow, 10)
+stroke(minerWindow, WHITE, 1, 0.45)
+
+local minerTitle = Instance.new("TextLabel")
+minerTitle.Size = UDim2.new(1, -45, 0, 32)
+minerTitle.Position = UDim2.fromOffset(12, 3)
+minerTitle.BackgroundTransparency = 1
+minerTitle.Text = "MINER SELECTION"
+minerTitle.TextColor3 = WHITE
+minerTitle.TextSize = 12
+minerTitle.Font = Enum.Font.GothamBold
+minerTitle.TextXAlignment = Enum.TextXAlignment.Left
+minerTitle.Parent = minerWindow
+
+local minerClose = Instance.new("TextButton")
+minerClose.Size = UDim2.fromOffset(25, 23)
+minerClose.Position = UDim2.new(1, -31, 0, 5)
+minerClose.BackgroundColor3 = PANEL2
+minerClose.Text = "X"
+minerClose.TextColor3 = WHITE
+minerClose.TextSize = 12
+minerClose.Font = Enum.Font.GothamBold
+minerClose.Parent = minerWindow
+
+corner(minerClose, 5)
+local minerCloseStroke = stroke(minerClose, WHITE, 1, 0.6)
+addHover(minerClose, PANEL2, Color3.fromRGB(65, 65, 65), minerCloseStroke)
+
+local minerDescription = Instance.new("TextLabel")
+minerDescription.Size = UDim2.new(1, -20, 0, 30)
+minerDescription.Position = UDim2.fromOffset(10, 35)
+minerDescription.BackgroundTransparency = 1
+minerDescription.Text = "Select the miners you want to auto-buy."
+minerDescription.TextColor3 = GREY
+minerDescription.TextSize = 9
+minerDescription.Font = Enum.Font.Gotham
+minerDescription.TextXAlignment = Enum.TextXAlignment.Left
+minerDescription.Parent = minerWindow
+
+local minerCount = Instance.new("TextLabel")
+minerCount.Size = UDim2.new(1, -20, 0, 17)
+minerCount.Position = UDim2.fromOffset(10, 62)
+minerCount.BackgroundTransparency = 1
+minerCount.TextColor3 = WHITE
+minerCount.TextSize = 10
+minerCount.Font = Enum.Font.GothamBold
+minerCount.TextXAlignment = Enum.TextXAlignment.Left
+minerCount.Parent = minerWindow
+
+local minerScroll = Instance.new("ScrollingFrame")
+minerScroll.Size = UDim2.new(1, -20, 0, 230)
+minerScroll.Position = UDim2.fromOffset(10, 83)
+minerScroll.BackgroundColor3 = PANEL
+minerScroll.BorderSizePixel = 0
+minerScroll.ScrollBarThickness = 3
+minerScroll.ScrollBarImageColor3 = WHITE
+minerScroll.CanvasSize = UDim2.fromOffset(0, 0)
+minerScroll.Parent = minerWindow
+
+corner(minerScroll, 6)
+stroke(minerScroll, WHITE, 1, 0.85)
+
+local minerLayout = Instance.new("UIListLayout")
+minerLayout.Padding = UDim.new(0, 3)
+minerLayout.SortOrder = Enum.SortOrder.LayoutOrder
+minerLayout.Parent = minerScroll
+
+local minerPadding = Instance.new("UIPadding")
+minerPadding.PaddingTop = UDim.new(0, 5)
+minerPadding.PaddingLeft = UDim.new(0, 5)
+minerPadding.PaddingRight = UDim.new(0, 5)
+minerPadding.PaddingBottom = UDim.new(0, 5)
+minerPadding.Parent = minerScroll
+
+minerLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    minerScroll.CanvasSize = UDim2.fromOffset(
+        0,
+        minerLayout.AbsoluteContentSize.Y + 10
+    )
+end)
+
+--==================================================
+-- MINER COUNT AND ROWS
+--==================================================
+
+local function getSelectedMinerCount()
+    local count = 0
+
+    for _, name in ipairs(MinerNames) do
+        if selectedMiners[name] then
+            count += 1
+        end
+    end
+
+    return count
+end
+
+local function updateMinerCount()
+    minerCount.Text = "SELECTED: "
+        .. getSelectedMinerCount()
+        .. " / "
+        .. #MinerNames
+end
+
+local function updateMinerRows()
+    for _, name in ipairs(MinerNames) do
+        local row = minerRows[name]
+
+        if row then
+            local enabled = selectedMiners[name] == true
+
+            row.Text = (enabled and "  [X]  " or "  [ ]  ") .. name
+            row.TextColor3 = enabled and WHITE or GREY
+
+            row.BackgroundColor3 = enabled
+                and Color3.fromRGB(48, 48, 48)
+                or PANEL2
+        end
+    end
+
+    updateMinerCount()
+end
+
+for index, name in ipairs(MinerNames) do
+    local row = Instance.new("TextButton")
+    row.Name = name
+    row.Size = UDim2.new(1, -3, 0, 23)
+    row.BackgroundColor3 = PANEL2
+    row.BorderSizePixel = 0
+    row.TextColor3 = GREY
+    row.TextSize = 10
+    row.Font = Enum.Font.Gotham
+    row.TextXAlignment = Enum.TextXAlignment.Left
+    row.LayoutOrder = index
+    row.Parent = minerScroll
+
+    corner(row, 4)
+    minerRows[name] = row
+
+    row.MouseButton1Click:Connect(function()
+        selectedMiners[name] = not selectedMiners[name]
+        updateMinerRows()
+        queueSave()
+    end)
+end
+
+--==================================================
+-- SELECT ALL / DESELECT ALL
+--==================================================
+
+local selectAllButton = Instance.new("TextButton")
+selectAllButton.Size = UDim2.fromOffset(115, 25)
+selectAllButton.Position = UDim2.fromOffset(10, 320)
+selectAllButton.BackgroundColor3 = PANEL2
+selectAllButton.Text = "SELECT ALL"
+selectAllButton.TextColor3 = WHITE
+selectAllButton.TextSize = 9
+selectAllButton.Font = Enum.Font.GothamBold
+selectAllButton.Parent = minerWindow
+
+corner(selectAllButton, 5)
+local selectAllStroke = stroke(selectAllButton, WHITE, 1, 0.7)
+addHover(selectAllButton, PANEL2, Color3.fromRGB(55, 55, 55), selectAllStroke)
+
+local deselectAllButton = Instance.new("TextButton")
+deselectAllButton.Size = UDim2.fromOffset(115, 25)
+deselectAllButton.Position = UDim2.fromOffset(135, 320)
+deselectAllButton.BackgroundColor3 = PANEL2
+deselectAllButton.Text = "DESELECT ALL"
+deselectAllButton.TextColor3 = WHITE
+deselectAllButton.TextSize = 9
+deselectAllButton.Font = Enum.Font.GothamBold
+deselectAllButton.Parent = minerWindow
+
+corner(deselectAllButton, 5)
+local deselectAllStroke = stroke(deselectAllButton, WHITE, 1, 0.7)
+addHover(deselectAllButton, PANEL2, Color3.fromRGB(55, 55, 55), deselectAllStroke)
+
+selectAllButton.MouseButton1Click:Connect(function()
+    for _, name in ipairs(MinerNames) do
+        selectedMiners[name] = true
+    end
+
+    updateMinerRows()
+    queueSave()
+end)
+
+deselectAllButton.MouseButton1Click:Connect(function()
+    for _, name in ipairs(MinerNames) do
+        selectedMiners[name] = false
+    end
+
+    updateMinerRows()
+    queueSave()
+end)
+
+--==================================================
+-- AUTO BUY CONTROLS
+--==================================================
+
+local purchaseStatus = Instance.new("TextLabel")
+purchaseStatus.Size = UDim2.new(1, -20, 0, 17)
+purchaseStatus.Position = UDim2.fromOffset(10, 348)
+purchaseStatus.BackgroundTransparency = 1
+purchaseStatus.Text = "AUTO BUY: OFF"
+purchaseStatus.TextColor3 = GREY
+purchaseStatus.TextSize = 9
+purchaseStatus.Font = Enum.Font.Gotham
+purchaseStatus.TextXAlignment = Enum.TextXAlignment.Left
+purchaseStatus.TextTruncate = Enum.TextTruncate.AtEnd
+purchaseStatus.Parent = minerWindow
+
+local autoBuyButton = Instance.new("TextButton")
+autoBuyButton.Size = UDim2.fromOffset(150, 30)
+autoBuyButton.Position = UDim2.fromOffset(10, 370)
+autoBuyButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+autoBuyButton.Text = "AUTO BUY: OFF"
+autoBuyButton.TextColor3 = WHITE
+autoBuyButton.TextSize = 10
+autoBuyButton.Font = Enum.Font.GothamBold
+autoBuyButton.Parent = minerWindow
+
+corner(autoBuyButton, 6)
+local autoBuyStroke = stroke(autoBuyButton, WHITE, 1, 0.6)
+addHover(autoBuyButton, Color3.fromRGB(35, 35, 35), Color3.fromRGB(65, 65, 65), autoBuyStroke)
+
+local stopBuyButton = Instance.new("TextButton")
+stopBuyButton.Size = UDim2.fromOffset(90, 30)
+stopBuyButton.Position = UDim2.fromOffset(170, 370)
+stopBuyButton.BackgroundColor3 = PANEL2
+stopBuyButton.Text = "STOP"
+stopBuyButton.TextColor3 = WHITE
+stopBuyButton.TextSize = 10
+stopBuyButton.Font = Enum.Font.GothamBold
+stopBuyButton.Parent = minerWindow
+
+corner(stopBuyButton, 6)
+local stopBuyStroke = stroke(stopBuyButton, WHITE, 1, 0.7)
+addHover(stopBuyButton, PANEL2, Color3.fromRGB(65, 65, 65), stopBuyStroke)
+
+--==================================================
+-- AUTO BUY HELPERS
+--==================================================
+
+local function setPurchaseStatus(message)
+    if not UNLOADED and purchaseStatus.Parent then
+        purchaseStatus.Text = tostring(message)
+    end
+end
+
+local function getCraftRemote()
+    local shared = ReplicatedStorage:FindFirstChild("Shared")
+    local remotes = shared and shared:FindFirstChild("Remotes")
+    local remote = remotes and remotes:FindFirstChild("CraftMiner")
+
+    if remote and remote:IsA("RemoteFunction") then
+        return remote
+    end
+
+    return nil
+end
+
+local function updateAutoBuyButton()
+    if AUTO_BUY then
+        autoBuyButton.Text = "AUTO BUY: ON"
+        autoBuyButton.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+    else
+        autoBuyButton.Text = "AUTO BUY: OFF"
+        autoBuyButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    end
+end
+
+--==================================================
+-- AUTO BUY WORKER
+--==================================================
+
+local function autoBuyWorker(mySession)
+    local craftRemote = getCraftRemote()
+
+    if not craftRemote then
+        AUTO_BUY = false
+        updateAutoBuyButton()
+        setPurchaseStatus("CRAFTMINER REMOTE NOT FOUND")
+        return
+    end
+
+    while AUTO_BUY
+        and not UNLOADED
+        and BUY_SESSION == mySession do
+
+        local selected = {}
+
+        for _, name in ipairs(MinerNames) do
+            if selectedMiners[name] then
+                table.insert(selected, name)
+            end
+        end
+
+        if #selected == 0 then
+            setPurchaseStatus("NO MINERS SELECTED")
+        else
+            local cycleStart = os.clock()
+            local completed = 0
+            local failed = 0
+
+            for index, minerName in ipairs(selected) do
+                if not AUTO_BUY
+                    or UNLOADED
+                    or BUY_SESSION ~= mySession then
+                    break
+                end
+
+                setPurchaseStatus(
+                    "CHECKING "
+                    .. minerName
+                    .. " ("
+                    .. index
+                    .. "/"
+                    .. #selected
+                    .. ")"
+                )
+
+                local success, result = pcall(function()
+                    return craftRemote:InvokeServer(minerName)
+                end)
+
+                if success and result ~= false then
+                    completed += 1
+                    setPurchaseStatus("REQUEST SENT: " .. minerName)
+                else
+                    failed += 1
+                    setPurchaseStatus(
+                        "FAILED: "
+                        .. minerName
+                        .. (success and " (SERVER REJECTED)" or "")
+                    )
+                end
+
+                task.wait(CRAFT_REQUEST_DELAY)
+            end
+
+            if not AUTO_BUY
+                or UNLOADED
+                or BUY_SESSION ~= mySession then
+                break
+            end
+
+            setPurchaseStatus(
+                "CYCLE DONE: "
+                .. completed
+                .. " SENT / "
+                .. failed
+                .. " FAILED"
+            )
+
+            -- Wait until 10 seconds have passed since this cycle began.
+            local remaining = AUTO_BUY_INTERVAL - (os.clock() - cycleStart)
+
+            if remaining > 0 then
+                local waitUntil = os.clock() + remaining
+
+                while os.clock() < waitUntil
+                    and AUTO_BUY
+                    and not UNLOADED
+                    and BUY_SESSION == mySession do
+                    task.wait(0.1)
+                end
+            end
+        end
+
+        if #selected == 0 then
+            task.wait(1)
+        end
+    end
+end
+
+local function stopAutoBuy()
+    AUTO_BUY = false
+    BUY_SESSION += 1
+
+    updateAutoBuyButton()
+    setPurchaseStatus("AUTO BUY STOPPED")
+end
+
+autoBuyButton.MouseButton1Click:Connect(function()
+    if UNLOADED then return end
+
+    if AUTO_BUY then
+        stopAutoBuy()
+        return
+    end
+
+    if getSelectedMinerCount() == 0 then
+        setPurchaseStatus("SELECT AT LEAST ONE MINER")
+        return
+    end
+
+    if not getCraftRemote() then
+        setPurchaseStatus("CRAFTMINER REMOTE NOT FOUND")
+        return
+    end
+
+    AUTO_BUY = true
+    BUY_SESSION += 1
+
+    local mySession = BUY_SESSION
+
+    updateAutoBuyButton()
+    setPurchaseStatus("AUTO BUY STARTED - 10 SEC CYCLE")
+
+    task.spawn(function()
+        local success, err = xpcall(function()
+            autoBuyWorker(mySession)
+        end, function(errorMessage)
+            return tostring(errorMessage)
+        end)
+
+        if not success and BUY_SESSION == mySession then
+            AUTO_BUY = false
+            updateAutoBuyButton()
+            setPurchaseStatus("AUTO BUY ERROR: " .. tostring(err):sub(1, 35))
+        end
+    end)
+end)
+
+stopBuyButton.MouseButton1Click:Connect(stopAutoBuy)
+
+minersOpenButton.MouseButton1Click:Connect(function()
+    minerWindow.Visible = not minerWindow.Visible
+end)
+
+minerClose.MouseButton1Click:Connect(function()
+    minerWindow.Visible = false
+end)
+
+--==================================================
 -- STATUS HELPERS
 --==================================================
 
@@ -593,7 +1074,7 @@ local function setStatus(message)
         return
     end
 
-    status.Text = "●  " .. tostring(message)
+    status.Text = "● " .. tostring(message)
 end
 
 --==================================================
@@ -651,7 +1132,6 @@ for index, entry in ipairs(availableZones) do
     row.Parent = scroll
 
     corner(row, 4)
-
     zoneRows[folderName] = row
 
     row.MouseEnter:Connect(function()
@@ -691,7 +1171,6 @@ for index, entry in ipairs(availableZones) do
 end
 
 updateSelection()
-
 search:GetPropertyChangedSignal("Text"):Connect(refreshZoneSearch)
 
 --==================================================
@@ -700,7 +1179,6 @@ search:GetPropertyChangedSignal("Text"):Connect(refreshZoneSearch)
 
 local function getRocksFolder(zoneName)
     local zone = ZonesFolder:FindFirstChild(zoneName)
-
     return zone and zone:FindFirstChild("Rocks")
 end
 
@@ -725,7 +1203,6 @@ local function validRock(rock, zoneName)
     end
 
     local hp = rock:GetAttribute("HP")
-
     return typeof(hp) == "number" and hp > 0
 end
 
@@ -879,7 +1356,6 @@ local function miningCycle(mySession)
         end
 
         setStatus("MOVING TO ROCK")
-
         root.CFrame = part.CFrame * CFrame.new(0, 0, 3)
 
         if not RUNNING or SESSION ~= mySession
@@ -937,10 +1413,7 @@ local function miningCycle(mySession)
 
     if validRock(rock, zoneName) then
         local newHP = rock:GetAttribute("HP")
-
         rockInfo.Text = "CURRENT ROCK   HP: " .. tostring(newHP)
-
-        -- NO DAMAGE DETECTION
 
         if newHP >= trackedRockStartHP
             and os.clock() - trackedRockStartTime >= NO_DAMAGE_TIMEOUT then
@@ -1005,7 +1478,7 @@ local function miningWorker(mySession)
 end
 
 --==================================================
--- START BUTTON
+-- START MINING
 --==================================================
 
 startButton.MouseButton1Click:Connect(function()
@@ -1047,10 +1520,6 @@ startButton.MouseButton1Click:Connect(function()
     setStatus("STARTING MINER")
     rockInfo.Text = "CURRENT ROCK   SEARCHING"
 
-    tween(startButton, 0.15, {
-        BackgroundColor3 = Color3.fromRGB(65, 65, 65)
-    })
-
     task.spawn(function()
         local success, err = xpcall(function()
             miningWorker(mySession)
@@ -1070,7 +1539,7 @@ startButton.MouseButton1Click:Connect(function()
 end)
 
 --==================================================
--- STOP BUTTON
+-- STOP MINING
 --==================================================
 
 local function stopMining()
@@ -1088,10 +1557,6 @@ local function stopMining()
 
     setStatus("STOPPED")
     rockInfo.Text = "CURRENT ROCK   --"
-
-    tween(stopButton, 0.15, {
-        BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-    })
 end
 
 stopButton.MouseButton1Click:Connect(stopMining)
@@ -1134,7 +1599,7 @@ local function updateLayout(animate)
     if selectorExpanded then
         main.Size = UDim2.fromOffset(290, 310)
 
-        zoneToggle.Text = "ZONES  ▼"
+        zoneToggle.Text = "ZONES ▼"
 
         search.Visible = true
         scroll.Visible = true
@@ -1151,7 +1616,7 @@ local function updateLayout(animate)
     else
         main.Size = UDim2.fromOffset(290, 195)
 
-        zoneToggle.Text = "ZONES  ▲"
+        zoneToggle.Text = "ZONES ▲"
 
         search.Visible = false
         scroll.Visible = false
@@ -1165,7 +1630,6 @@ local function updateLayout(animate)
 
     if animate then
         local targetSize = main.Size
-
         main.Size = UDim2.fromOffset(290, 35)
 
         tween(main, 0.25, {
@@ -1174,24 +1638,14 @@ local function updateLayout(animate)
     end
 end
 
---==================================================
--- ZONE LIST ANIMATION
---==================================================
-
 zoneToggle.MouseButton1Click:Connect(function()
     selectorExpanded = not selectorExpanded
-
     queueSave()
     updateLayout(true)
 end)
 
---==================================================
--- MINIMIZE / RESTORE
---==================================================
-
 minimize.MouseButton1Click:Connect(function()
     guiMinimized = not guiMinimized
-
     queueSave()
     updateLayout(true)
 end)
@@ -1206,6 +1660,9 @@ close.MouseButton1Click:Connect(function()
     UNLOADED = true
     RUNNING = false
     SESSION += 1
+
+    AUTO_BUY = false
+    BUY_SESSION += 1
 
     gui:Destroy()
 end)
@@ -1229,7 +1686,7 @@ task.spawn(function()
 end)
 
 --==================================================
--- SAVE CONFIGURATION ON UNLOAD
+-- SAVE ON CLOSE
 --==================================================
 
 game:BindToClose(function()
@@ -1246,7 +1703,13 @@ updateSelection()
 refreshZoneSearch()
 updateLayout(false)
 
-setStatus("STOPPED")
+updateMinerRows()
+updateAutoBuyButton()
 
-print("[Multi-Zone Miner V18] Loaded successfully")
-print("[Multi-Zone Miner V18] Available zones: " .. #availableZones)
+setStatus("STOPPED")
+setPurchaseStatus("AUTO BUY: OFF")
+
+print("[Multi-Zone Miner V20] Loaded successfully")
+print("[Multi-Zone Miner V20] Available zones: " .. #availableZones)
+print("[Multi-Zone Miner V20] Available miners: " .. #MinerNames)
+print("[Multi-Zone Miner V20] Auto Buy interval: " .. AUTO_BUY_INTERVAL .. " seconds")
