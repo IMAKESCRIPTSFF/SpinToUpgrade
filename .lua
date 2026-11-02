@@ -20,15 +20,11 @@ local ERROR_RETRY_DELAY = 1
 local NO_DAMAGE_TIMEOUT = 0.4
 local SKIP_DURATION = 3
 
-local AUTO_BUY_INTERVAL = 0.1
+local AUTO_BUY_INTERVAL = 10
 local CRAFT_REQUEST_DELAY = 0.5
 
 local BOSS_TELEPORT_INTERVAL = 0.10
 local BOSS_ATTACK_INTERVAL = 0.05
-
-local lastBossTeleport = 0
-local lastBossAttack = 0
-local activeBoss = nil
 
 local MinerNames = {
     "StoneMiner",
@@ -100,6 +96,9 @@ local SESSION = 0
 local AUTO_BUY = false
 local BUY_SESSION = 0
 
+local AUTO_BOSS = false
+local BOSS_SESSION = 0
+
 local selectedZone = nil
 local currentRock = nil
 
@@ -113,6 +112,9 @@ local nextTeleportAt = 0
 local nextRockAt = 0
 local lastRescan = 0
 
+local lastBossTeleport = 0
+local lastBossAttack = 0
+
 local availableZones = {}
 local zoneRows = {}
 local minerRows = {}
@@ -122,7 +124,7 @@ local guiMinimized = false
 
 local MineRemote = nil
 
-local CONFIG_FILE = "MultiZoneMinerV21.json"
+local CONFIG_FILE = "MultiZoneMinerV22.json"
 
 local savedConfig = {}
 local savedGuiPosition = nil
@@ -238,23 +240,13 @@ local function getDisplayName(name)
     return tostring(name or "Unknown")
 end
 
-local old = PlayerGui:FindFirstChild("MultiZoneMinerV21")
+local old = PlayerGui:FindFirstChild("MultiZoneMinerV22")
 if old then
     old:Destroy()
 end
 
-local oldV20 = PlayerGui:FindFirstChild("MultiZoneMinerV20")
-if oldV20 then
-    oldV20:Destroy()
-end
-
-local oldV19 = PlayerGui:FindFirstChild("MultiZoneMinerV19")
-if oldV19 then
-    oldV19:Destroy()
-end
-
 local gui = Instance.new("ScreenGui")
-gui.Name = "MultiZoneMinerV21"
+gui.Name = "MultiZoneMinerV22"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = PlayerGui
@@ -361,7 +353,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -145, 0, 30)
 title.Position = UDim2.fromOffset(12, 3)
 title.BackgroundTransparency = 1
-title.Text = "AUTO MINER / V21"
+title.Text = "AUTO MINER / V22"
 title.TextColor3 = WHITE
 title.TextSize = 13
 title.Font = Enum.Font.GothamBold
@@ -437,6 +429,8 @@ local function updatePlayerCount()
     if not UNLOADED then
         playerCounter.Text =
             "PLAYERS ONLINE   " .. #Players:GetPlayers()
+            .. "    |    BOSS: "
+            .. (AUTO_BOSS and "ON" or "OFF")
     end
 end
 
@@ -533,15 +527,15 @@ rockInfo.Font = Enum.Font.Gotham
 rockInfo.TextXAlignment = Enum.TextXAlignment.Left
 rockInfo.Parent = main
 
-local function makeButton(text, x, color)
+local function makeButton(text, x, width, color)
     local button = Instance.new("TextButton")
-    button.Size = UDim2.fromOffset(130, 32)
+    button.Size = UDim2.fromOffset(width, 32)
     button.Position = UDim2.fromOffset(x, 267)
     button.BackgroundColor3 = color
     button.BorderSizePixel = 0
     button.Text = text
     button.TextColor3 = WHITE
-    button.TextSize = 11
+    button.TextSize = 9
     button.Font = Enum.Font.GothamBold
     button.Parent = main
 
@@ -552,18 +546,28 @@ local function makeButton(text, x, color)
 end
 
 local startButton, startStroke = makeButton(
-    "START MINING",
+    "MINING",
     10,
+    85,
+    Color3.fromRGB(28, 28, 28)
+)
+
+local bossButton, bossStroke = makeButton(
+    "BOSS: OFF",
+    102,
+    85,
     Color3.fromRGB(28, 28, 28)
 )
 
 local stopButton, stopStroke = makeButton(
     "STOP",
-    150,
+    194,
+    85,
     Color3.fromRGB(28, 28, 28)
 )
 
 addHover(startButton, Color3.fromRGB(28, 28, 28), Color3.fromRGB(65, 65, 65), startStroke)
+addHover(bossButton, Color3.fromRGB(28, 28, 28), Color3.fromRGB(65, 65, 65), bossStroke)
 addHover(stopButton, Color3.fromRGB(28, 28, 28), Color3.fromRGB(65, 65, 65), stopStroke)
 
 local minerWindow = Instance.new("Frame")
@@ -859,7 +863,6 @@ local function autoBuyWorker(mySession)
         if #selected == 0 then
             setPurchaseStatus("NO MINERS SELECTED")
         else
-            local cycleStart = os.clock()
             local completed = 0
             local failed = 0
 
@@ -889,11 +892,7 @@ local function autoBuyWorker(mySession)
                     setPurchaseStatus("REQUEST SENT: " .. minerName)
                 else
                     failed += 1
-                    setPurchaseStatus(
-                        "FAILED: "
-                        .. minerName
-                        .. (success and " (SERVER REJECTED)" or "")
-                    )
+                    setPurchaseStatus("FAILED: " .. minerName)
                 end
 
                 task.wait(CRAFT_REQUEST_DELAY)
@@ -913,18 +912,7 @@ local function autoBuyWorker(mySession)
                 .. " FAILED"
             )
 
-            local remaining = AUTO_BUY_INTERVAL - (os.clock() - cycleStart)
-
-            if remaining > 0 then
-                local waitUntil = os.clock() + remaining
-
-                while os.clock() < waitUntil
-                    and AUTO_BUY
-                    and not UNLOADED
-                    and BUY_SESSION == mySession do
-                    task.wait(0.1)
-                end
-            end
+            task.wait(AUTO_BUY_INTERVAL)
         end
 
         if #selected == 0 then
@@ -1161,7 +1149,17 @@ local function getCharacterParts()
     return humanoid, root
 end
 
---// BOSS DETECTION AND FIST TARGETING
+local function getMineRemote()
+    local shared = ReplicatedStorage:FindFirstChild("Shared")
+    local remotes = shared and shared:FindFirstChild("Remotes")
+    local remote = remotes and remotes:FindFirstChild("MineRock")
+
+    if remote and remote:IsA("RemoteEvent") then
+        return remote
+    end
+
+    return nil
+end
 
 local function getDiamondFist()
     local adminEvents = workspace:FindFirstChild("AdminEvents")
@@ -1211,61 +1209,124 @@ local function getBossFistPart(boss, root)
     return nil
 end
 
-local function handleDiamondFist(mySession)
-    local boss = getDiamondFist()
-
-    if not boss then
-        return false
+local function updateBossButton()
+    if AUTO_BOSS then
+        bossButton.Text = "BOSS: ON"
+        bossButton.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+    else
+        bossButton.Text = "BOSS: OFF"
+        bossButton.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
     end
+
+    updatePlayerCount()
+end
+
+local function bossWorker(mySession)
+    MineRemote = getMineRemote()
 
     if not MineRemote then
-        setStatus("BOSS FOUND - MINEROCK MISSING")
-        return true
+        AUTO_BOSS = false
+        updateBossButton()
+        setStatus("MINEROCK REMOTE NOT FOUND")
+        return
     end
 
-    local humanoid, root = getCharacterParts()
+    while AUTO_BOSS
+        and not UNLOADED
+        and BOSS_SESSION == mySession do
 
-    if not humanoid or not root then
-        setStatus("WAITING FOR CHARACTER - BOSS")
-        return true
+        local boss = getDiamondFist()
+
+        if boss then
+            local humanoid, root = getCharacterParts()
+
+            if humanoid and root then
+                local fist = getBossFistPart(boss, root)
+
+                if fist then
+                    local now = os.clock()
+
+                    if now - lastBossTeleport >= BOSS_TELEPORT_INTERVAL then
+                        lastBossTeleport = now
+
+                        pcall(function()
+                            root.CFrame = fist.CFrame
+                            root.AssemblyLinearVelocity = Vector3.zero
+                            root.AssemblyAngularVelocity = Vector3.zero
+                        end)
+                    end
+
+                    if now - lastBossAttack >= BOSS_ATTACK_INTERVAL then
+                        lastBossAttack = now
+
+                        pcall(function()
+                            MineRemote:FireServer(boss)
+                        end)
+                    end
+
+                    setStatus("AUTO BOSS - ATTACKING")
+                    rockInfo.Text = "BOSS TARGET   DIAMOND FIST"
+                else
+                    setStatus("BOSS FOUND - WAITING FOR FIST")
+                end
+            else
+                setStatus("WAITING FOR CHARACTER")
+            end
+        else
+            setStatus("AUTO BOSS - SEARCHING")
+        end
+
+        task.wait(0.03)
     end
-
-    local fist = getBossFistPart(boss, root)
-
-    if not fist then
-        setStatus("BOSS FOUND - WAITING FOR FIST")
-        return true
-    end
-
-    activeBoss = boss
-
-    local now = os.clock()
-
-    -- Teleport directly into the fist's current position.
-    if now - lastBossTeleport >= BOSS_TELEPORT_INTERVAL then
-        lastBossTeleport = now
-
-        pcall(function()
-            root.CFrame = fist.CFrame
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.AssemblyAngularVelocity = Vector3.zero
-        end)
-    end
-
-    -- Send the exact boss object used in the supplied remote call.
-    if now - lastBossAttack >= BOSS_ATTACK_INTERVAL then
-        lastBossAttack = now
-
-        pcall(function()
-            MineRemote:FireServer(boss)
-        end)
-    end
-
-    setStatus("BOSS ACTIVE - INSIDE FIST")
-    rockInfo.Text = "CURRENT TARGET   DIAMOND FIST"
-
-    return true
 end
+
+bossButton.MouseButton1Click:Connect(function()
+    if UNLOADED then return end
+
+    if AUTO_BOSS then
+        AUTO_BOSS = false
+        BOSS_SESSION += 1
+
+        updateBossButton()
+        setStatus(RUNNING and "MINING" or "STOPPED")
+
+        if not RUNNING then
+            rockInfo.Text = "CURRENT ROCK   --"
+        end
+
+        return
+    end
+
+    if not getMineRemote() then
+        setStatus("MINEROCK REMOTE NOT FOUND")
+        return
+    end
+
+    AUTO_BOSS = true
+    BOSS_SESSION += 1
+
+    lastBossTeleport = 0
+    lastBossAttack = 0
+
+    local mySession = BOSS_SESSION
+
+    updateBossButton()
+    setStatus("AUTO BOSS - SEARCHING")
+
+    task.spawn(function()
+        local success, err = xpcall(function()
+            bossWorker(mySession)
+        end, function(errorMessage)
+            return tostring(errorMessage)
+        end)
+
+        if not success and BOSS_SESSION == mySession then
+            AUTO_BOSS = false
+            updateBossButton()
+            setStatus("BOSS ERROR: " .. tostring(err):sub(1, 40))
+        end
+    end)
+end)
 
 local function findRock(zoneName)
     local folder = getRocksFolder(zoneName)
@@ -1352,30 +1413,6 @@ end
 local function miningCycle(mySession)
     if not RUNNING or SESSION ~= mySession then
         return
-    end
-
-    -- Boss takes priority over all normal mining.
-    if handleDiamondFist(mySession) then
-        return
-    end
-
-    -- Reset mining state after the boss disappears.
-    if activeBoss then
-        activeBoss = nil
-
-        currentRock = nil
-        trackedRock = nil
-        trackedRockStartHP = nil
-        trackedRockStartTime = 0
-
-        nextTeleportAt = 0
-        nextRockAt = 0
-        lastRescan = 0
-
-        lastBossTeleport = 0
-        lastBossAttack = 0
-
-        setStatus("BOSS GONE - RESUMING MINING")
     end
 
     local zoneName = selectedZone
@@ -1584,11 +1621,9 @@ startButton.MouseButton1Click:Connect(function()
         return
     end
 
-    local shared = ReplicatedStorage:FindFirstChild("Shared")
-    local remotes = shared and shared:FindFirstChild("Remotes")
-    local remote = remotes and remotes:FindFirstChild("MineRock")
+    local remote = getMineRemote()
 
-    if not remote or not remote:IsA("RemoteEvent") then
+    if not remote then
         MineRemote = nil
         setStatus("MINEROCK REMOTE NOT FOUND")
         return
@@ -1603,10 +1638,6 @@ startButton.MouseButton1Click:Connect(function()
     trackedRock = nil
     trackedRockStartHP = nil
     trackedRockStartTime = 0
-
-    activeBoss = nil
-    lastBossTeleport = 0
-    lastBossAttack = 0
 
     nextTeleportAt = 0
     nextRockAt = 0
@@ -1644,13 +1675,11 @@ local function stopMining()
     trackedRockStartHP = nil
     trackedRockStartTime = 0
 
-    activeBoss = nil
-
     nextTeleportAt = 0
     nextRockAt = 0
     lastRescan = 0
 
-    setStatus("STOPPED")
+    setStatus(AUTO_BOSS and "AUTO BOSS RUNNING" or "STOPPED")
     rockInfo.Text = "CURRENT ROCK   --"
 end
 
@@ -1666,6 +1695,7 @@ local function updateLayout(animate)
         selectedLabel.Visible = false
         rockInfo.Visible = false
         startButton.Visible = false
+        bossButton.Visible = false
         stopButton.Visible = false
 
         minimize.Text = "+"
@@ -1683,6 +1713,7 @@ local function updateLayout(animate)
     selectedLabel.Visible = true
     rockInfo.Visible = true
     startButton.Visible = true
+    bossButton.Visible = true
     stopButton.Visible = true
 
     minimize.Text = "-"
@@ -1702,8 +1733,8 @@ local function updateLayout(animate)
         rockInfo.Position = UDim2.fromOffset(10, 246)
 
         startButton.Position = UDim2.fromOffset(10, 267)
-        stopButton.Position = UDim2.fromOffset(150, 267)
-
+        bossButton.Position = UDim2.fromOffset(102, 267)
+        stopButton.Position = UDim2.fromOffset(194, 267)
     else
         main.Size = UDim2.fromOffset(290, 195)
 
@@ -1716,7 +1747,8 @@ local function updateLayout(animate)
         rockInfo.Position = UDim2.fromOffset(10, 125)
 
         startButton.Position = UDim2.fromOffset(10, 151)
-        stopButton.Position = UDim2.fromOffset(150, 151)
+        bossButton.Position = UDim2.fromOffset(102, 151)
+        stopButton.Position = UDim2.fromOffset(194, 151)
     end
 
     if animate then
@@ -1745,8 +1777,12 @@ close.MouseButton1Click:Connect(function()
     saveConfig()
 
     UNLOADED = true
+
     RUNNING = false
     SESSION += 1
+
+    AUTO_BOSS = false
+    BOSS_SESSION += 1
 
     AUTO_BUY = false
     BUY_SESSION += 1
@@ -1780,14 +1816,7 @@ updateLayout(false)
 
 updateMinerRows()
 updateAutoBuyButton()
+updateBossButton()
 
 setStatus("STOPPED")
 setPurchaseStatus("AUTO BUY: OFF")
-
-print("Auto Miner V21 loaded")
-print("Available zones: " .. #availableZones)
-print("Available miners: " .. #MinerNames)
-print("Auto Buy interval: " .. AUTO_BUY_INTERVAL .. " seconds")
-print("Boss detection: DiamondFist")
-print("Boss teleport interval: " .. BOSS_TELEPORT_INTERVAL)
-print("Boss attack interval: " .. BOSS_ATTACK_INTERVAL)
