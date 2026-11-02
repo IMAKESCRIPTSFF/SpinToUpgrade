@@ -28,8 +28,8 @@ local ERROR_RETRY_DELAY = 1
 local NO_DAMAGE_TIMEOUT = 0.5
 local SKIP_DURATION = 3
 
-local AUTO_BUY_INTERVAL = 10
-local CRAFT_REQUEST_DELAY = 0.4
+local AUTO_BUY_INTERVAL = 0.5
+local CRAFT_REQUEST_DELAY = 0.5
 
 --==================================================
 -- MINER CATALOGUE
