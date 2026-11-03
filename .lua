@@ -23,8 +23,10 @@ local SKIP_DURATION = 3
 local AUTO_BUY_INTERVAL = 10
 local CRAFT_REQUEST_DELAY = 0.5
 
-local BOSS_TELEPORT_INTERVAL = 0.10
+local BOSS_TELEPORT_INTERVAL = 0.5
 local BOSS_ATTACK_INTERVAL = 0.05
+local BOSS_TELEPORT_DISTANCE = 8
+local BOSS_TELEPORT_HEIGHT = 5
 
 local CONFIG_FILE = "SWS_Script.json"
 
@@ -945,7 +947,12 @@ end
 
 local function getDiamondFist()
     local adminEvents = workspace:FindFirstChild("AdminEvents")
-    return adminEvents and adminEvents:FindFirstChild("DiamondFist")
+    if not adminEvents then
+        return nil
+    end
+
+    return adminEvents:FindFirstChild("DiamondFist")
+        or adminEvents:FindFirstChild("RockBoss")
 end
 
 local function getBossFistPart(boss, root)
@@ -1008,6 +1015,9 @@ local function bossWorker(mySession)
         return
     end
 
+    local lockedBoss = nil
+    local lockedFist = nil
+
     while AUTO_BOSS and not UNLOADED and BOSS_SESSION == mySession do
         local boss = getDiamondFist()
 
@@ -1015,16 +1025,31 @@ local function bossWorker(mySession)
             local humanoid, root = getCharacterParts()
 
             if humanoid and root then
-                local fist = getBossFistPart(boss, root)
+                if boss ~= lockedBoss then
+                    lockedBoss = boss
+                    lockedFist = getBossFistPart(boss, root)
+                elseif not lockedFist or not lockedFist:IsDescendantOf(boss) then
+                    lockedFist = getBossFistPart(boss, root)
+                end
 
-                if fist then
+                local fist = lockedFist
+
+                if fist and fist:IsA("BasePart") then
                     local now = os.clock()
 
-                    if now - lastBossTeleport >= BOSS_TELEPORT_INTERVAL then
+                    local teleportPosition = fist.Position
+                        + Vector3.new(0, BOSS_TELEPORT_HEIGHT, 0)
+
+                    local distanceFromTarget =
+                        (root.Position - teleportPosition).Magnitude
+
+                    if distanceFromTarget > BOSS_TELEPORT_DISTANCE
+                        and now - lastBossTeleport >= BOSS_TELEPORT_INTERVAL then
+
                         lastBossTeleport = now
 
                         pcall(function()
-                            root.CFrame = fist.CFrame
+                            root.CFrame = CFrame.new(teleportPosition)
                             root.AssemblyLinearVelocity = Vector3.zero
                             root.AssemblyAngularVelocity = Vector3.zero
                         end)
@@ -1039,6 +1064,9 @@ local function bossWorker(mySession)
                     end
                 end
             end
+        else
+            lockedBoss = nil
+            lockedFist = nil
         end
 
         task.wait(0.03)
