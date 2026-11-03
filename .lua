@@ -1,4 +1,3 @@
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -945,6 +944,7 @@ local function getMineRemote()
     return nil
 end
 
+-- UPDATED: GemPinata added to the boss priority list.
 local function getDiamondFist()
     local adminEvents = workspace:FindFirstChild("AdminEvents")
     if not adminEvents then
@@ -953,6 +953,7 @@ local function getDiamondFist()
 
     return adminEvents:FindFirstChild("DiamondFist")
         or adminEvents:FindFirstChild("RockBoss")
+        or adminEvents:FindFirstChild("GemPinata")
 end
 
 local function getBossFistPart(boss, root)
