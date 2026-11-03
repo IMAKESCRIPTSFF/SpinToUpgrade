@@ -1,3 +1,4 @@
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -72,11 +73,13 @@ local GREY = Color3.fromRGB(155, 155, 155)
 local RUNNING = false
 local AUTO_BOSS = false
 local AUTO_BUY = false
+local AUTO_PLAYTIME = false
 local UNLOADED = false
 
 local SESSION = 0
 local BOSS_SESSION = 0
 local BUY_SESSION = 0
+local PLAYTIME_SESSION = 0
 
 local selectedZone
 local selectedMiners = {}
@@ -157,7 +160,8 @@ local function saveConfig()
         GuiMinimized = guiMinimized,
         GuiPosition = savedGuiPosition,
         AutoBoss = AUTO_BOSS,
-        AutoBuy = AUTO_BUY
+        AutoBuy = AUTO_BUY,
+        AutoPlaytime = AUTO_PLAYTIME
     }
 
     return pcall(function()
@@ -201,6 +205,7 @@ end
 
 local resumeBoss = savedConfig.AutoBoss == true
 local resumeBuy = savedConfig.AutoBuy == true
+local resumePlaytime = savedConfig.AutoPlaytime == true
 
 for _, entry in ipairs(zoneOrder) do
     local zone = ZonesFolder:FindFirstChild(entry[1])
@@ -445,7 +450,7 @@ local stopButton = makeButton(
 
 local minerWindow = Instance.new("Frame")
 minerWindow.Name = "MinerSelection"
-minerWindow.Size = UDim2.fromOffset(260, 405)
+minerWindow.Size = UDim2.fromOffset(260, 445)
 minerWindow.Position = UDim2.new(0.5, 155, 0.5, -202)
 minerWindow.BackgroundColor3 = BLACK
 minerWindow.BorderSizePixel = 0
@@ -639,6 +644,12 @@ local stopBuyButton = makeButton(
     UDim2.fromOffset(170, 370)
 )
 
+local playtimeButton = makeButton(
+    minerWindow, "PLAYTIME: OFF",
+    UDim2.fromOffset(250, 30),
+    UDim2.fromOffset(5, 407)
+)
+
 local function setStatus(message)
     return
 end
@@ -789,6 +800,82 @@ autoBuyButton.MouseButton1Click:Connect(function()
 end)
 
 stopBuyButton.MouseButton1Click:Connect(stopAutoBuy)
+
+local function getPlaytimeRemote()
+    local shared = ReplicatedStorage:FindFirstChild("Shared")
+    local remotes = shared and shared:FindFirstChild("Remotes")
+    local remote = remotes and remotes:FindFirstChild("ClaimPlaytimeGift")
+
+    if remote and remote:IsA("RemoteFunction") then
+        return remote
+    end
+
+    return nil
+end
+
+local function updatePlaytimeButton()
+    playtimeButton.Text = AUTO_PLAYTIME
+        and "PLAYTIME: ON"
+        or "PLAYTIME: OFF"
+
+    playtimeButton.BackgroundColor3 = AUTO_PLAYTIME
+        and Color3.fromRGB(55, 55, 55)
+        or PANEL2
+end
+
+local function stopPlaytime()
+    AUTO_PLAYTIME = false
+    PLAYTIME_SESSION += 1
+
+    updatePlaytimeButton()
+    queueSave()
+end
+
+local function startPlaytime()
+    if AUTO_PLAYTIME or UNLOADED then return end
+
+    local remote = getPlaytimeRemote()
+
+    if not remote then
+        playtimeButton.Text = "PLAYTIME REMOTE NOT FOUND"
+        return
+    end
+
+    AUTO_PLAYTIME = true
+    PLAYTIME_SESSION += 1
+
+    local mySession = PLAYTIME_SESSION
+
+    updatePlaytimeButton()
+    queueSave()
+
+    task.spawn(function()
+        while AUTO_PLAYTIME and not UNLOADED
+            and PLAYTIME_SESSION == mySession do
+
+            for rewardId = 1, 8 do
+                if not AUTO_PLAYTIME or UNLOADED
+                    or PLAYTIME_SESSION ~= mySession then
+                    break
+                end
+
+                pcall(function()
+                    remote:InvokeServer(rewardId)
+                end)
+
+                task.wait(1)
+            end
+        end
+    end)
+end
+
+playtimeButton.MouseButton1Click:Connect(function()
+    if AUTO_PLAYTIME then
+        stopPlaytime()
+    else
+        startPlaytime()
+    end
+end)
 
 minersOpenButton.MouseButton1Click:Connect(function()
     minerWindow.Visible = not minerWindow.Visible
@@ -944,7 +1031,6 @@ local function getMineRemote()
     return nil
 end
 
--- UPDATED: GemPinata added to the boss priority list.
 local function getDiamondFist()
     local adminEvents = workspace:FindFirstChild("AdminEvents")
     if not adminEvents then
@@ -1500,6 +1586,9 @@ close.MouseButton1Click:Connect(function()
     AUTO_BUY = false
     BUY_SESSION += 1
 
+    AUTO_PLAYTIME = false
+    PLAYTIME_SESSION += 1
+
     gui:Destroy()
 end)
 
@@ -1534,6 +1623,7 @@ updateSelection()
 refreshZoneSearch()
 updateMinerRows()
 updateAutoBuyButton()
+updatePlaytimeButton()
 updateBossButton()
 updateLayout(false)
 
@@ -1551,6 +1641,10 @@ task.spawn(function()
 
     if resumeBuy and not UNLOADED then
         startAutoBuy()
+    end
+
+    if resumePlaytime and not UNLOADED then
+        startPlaytime()
     end
 
     saveConfig()
