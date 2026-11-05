@@ -30,14 +30,29 @@ local verified = false
 local accessType
 local expiresAt
 local cachedKey
+local GlobalCache
+local CacheData
 
-if type(isfile) == "function" and type(readfile) == "function" then
+if type(getgenv) == "function" then
+    local ok, env = pcall(getgenv)
+    if ok and type(env) == "table" then
+        GlobalCache = env
+        CacheData = env.SWS_HUB_KEY_CACHE
+    end
+end
+
+if type(CacheData) == "table" and tonumber(CacheData.userId) == UserId and type(CacheData.key) == "string" then
+    cachedKey = CacheData.key
+    expiresAt = tonumber(CacheData.expiresAt)
+    accessType = CacheData.type
+end
+
+if not cachedKey and type(readfile) == "function" then
     local cacheRead, cacheData = pcall(function()
-        if isfile(CacheFile) then
-            return HttpService:JSONDecode(readfile(CacheFile))
-        end
+        return HttpService:JSONDecode(readfile(CacheFile))
     end)
     if cacheRead and type(cacheData) == "table" and tonumber(cacheData.userId) == UserId and type(cacheData.key) == "string" then
+        CacheData = cacheData
         cachedKey = cacheData.key
         expiresAt = tonumber(cacheData.expiresAt)
         accessType = cacheData.type
@@ -45,14 +60,20 @@ if type(isfile) == "function" and type(readfile) == "function" then
 end
 
 local function saveKey(key, keyType, expiry)
+    local data = {
+        userId = UserId,
+        key = key,
+        type = keyType,
+        expiresAt = expiry
+    }
+
+    if GlobalCache then
+        GlobalCache.SWS_HUB_KEY_CACHE = data
+    end
+
     if type(writefile) == "function" then
         pcall(function()
-            writefile(CacheFile, HttpService:JSONEncode({
-                userId = UserId,
-                key = key,
-                type = keyType,
-                expiresAt = expiry
-            }))
+            writefile(CacheFile, HttpService:JSONEncode(data))
         end)
     end
 end
