@@ -24,6 +24,79 @@ if not hwidSuccess or type(HWID) ~= "string" or HWID == "" then
     return
 end
 
+local UserId = Player.UserId
+local CacheFile = "SWS_HUB_KEY_" .. tostring(UserId) .. ".json"
+local verified = false
+local accessType
+local expiresAt
+local cachedKey
+
+if type(isfile) == "function" and type(readfile) == "function" then
+    local cacheRead, cacheData = pcall(function()
+        if isfile(CacheFile) then
+            return HttpService:JSONDecode(readfile(CacheFile))
+        end
+    end)
+    if cacheRead and type(cacheData) == "table" and tonumber(cacheData.userId) == UserId and type(cacheData.key) == "string" then
+        cachedKey = cacheData.key
+        expiresAt = tonumber(cacheData.expiresAt)
+        accessType = cacheData.type
+    end
+end
+
+local function saveKey(key, keyType, expiry)
+    if type(writefile) == "function" then
+        pcall(function()
+            writefile(CacheFile, HttpService:JSONEncode({
+                userId = UserId,
+                key = key,
+                type = keyType,
+                expiresAt = expiry
+            }))
+        end)
+    end
+end
+
+local function verifyWithServer(key)
+    local success, response = pcall(function()
+        return Request({
+            Url = Worker .. "/verify",
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode({key = key, hwid = HWID})
+        })
+    end)
+    if not success or type(response) ~= "table" then return false end
+    local decoded
+    local parsed = pcall(function()
+        decoded = HttpService:JSONDecode(response.Body or "")
+    end)
+    if not parsed or type(decoded) ~= "table" or decoded.valid ~= true then return false end
+    return true, decoded
+end
+
+if type(cachedKey) == "string" and cachedKey ~= "" then
+    local valid, decoded = verifyWithServer(cachedKey)
+    if valid then
+        verified = true
+        accessType = decoded.type or accessType or "24h"
+        if accessType == "permanent" then
+            expiresAt = nil
+        elseif not expiresAt or expiresAt <= os.time() then
+            expiresAt = os.time() + 86400
+        end
+        saveKey(cachedKey, accessType, expiresAt)
+    else
+        cachedKey, expiresAt, accessType = nil, nil, nil
+        if type(delfile) == "function" then
+            pcall(function()
+                if isfile(CacheFile) then delfile(CacheFile) end
+            end)
+        end
+    end
+end
+
+if not verified then
 local old = CoreGui:FindFirstChild("SWSKeySystem")
 if old then
     old:Destroy()
@@ -122,7 +195,6 @@ status.Font = Enum.Font.GothamBold
 status.Parent = main
 
 local busy = false
-local verified = false
 
 getButton.MouseButton1Click:Connect(function()
     if type(setclipboard) == "function" then
@@ -186,6 +258,9 @@ verifyButton.MouseButton1Click:Connect(function()
 
         if decoded.valid == true then
             verified = true
+            accessType = decoded.type or "24h"
+            expiresAt = accessType == "permanent" and nil or (os.time() + 86400)
+            saveKey(key, accessType, expiresAt)
             status.Text = decoded.type == "permanent"
                 and "PERMANENT KEY VERIFIED"
                 or "24-HOUR KEY VERIFIED"
@@ -241,7 +316,61 @@ if not verified then
 end
 end
 
+local oldTimer = CoreGui:FindFirstChild("SWSKeyTime")
+if oldTimer then oldTimer:Destroy() end
 
+local timerGui = Instance.new("ScreenGui")
+timerGui.Name = "SWSKeyTime"
+timerGui.ResetOnSpawn = false
+timerGui.Parent = CoreGui
+
+local timerFrame = Instance.new("Frame")
+timerFrame.Size = UDim2.fromOffset(178, 42)
+timerFrame.Position = UDim2.new(1, -192, 0, 18)
+timerFrame.BackgroundColor3 = Color3.fromRGB(17, 17, 20)
+timerFrame.BorderSizePixel = 0
+timerFrame.Parent = timerGui
+
+local timerCorner = Instance.new("UICorner")
+timerCorner.CornerRadius = UDim.new(0, 7)
+timerCorner.Parent = timerFrame
+
+local timerStroke = Instance.new("UIStroke")
+timerStroke.Color = Color3.fromRGB(85, 85, 95)
+timerStroke.Transparency = 0.3
+timerStroke.Parent = timerFrame
+
+local timerLabel = Instance.new("TextLabel")
+timerLabel.Size = UDim2.new(1, -14, 1, 0)
+timerLabel.Position = UDim2.fromOffset(7, 0)
+timerLabel.BackgroundTransparency = 1
+timerLabel.TextColor3 = Color3.fromRGB(130, 220, 150)
+timerLabel.TextSize = 11
+timerLabel.Font = Enum.Font.GothamBold
+timerLabel.TextXAlignment = Enum.TextXAlignment.Center
+timerLabel.Parent = timerFrame
+
+task.spawn(function()
+    while timerGui.Parent do
+        if accessType == "permanent" then
+            timerLabel.Text = "SWS KEY  |  PERMANENT"
+        else
+            local remaining = math.max(0, (expiresAt or os.time()) - os.time())
+            local hours = math.floor(remaining / 3600)
+            local minutes = math.floor((remaining % 3600) / 60)
+            local seconds = remaining % 60
+            timerLabel.Text = string.format("SWS KEY  |  %02d:%02d:%02d", hours, minutes, seconds)
+            if remaining <= 0 then
+                timerLabel.TextColor3 = Color3.fromRGB(235, 125, 125)
+                timerLabel.Text = "SWS KEY  |  EXPIRED"
+                break
+            end
+        end
+        task.wait(1)
+    end
+end)
+
+end
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
