@@ -807,6 +807,12 @@ main.Parent = gui
 
 corner(main, 10)
 local mainStroke = stroke(main, 0.45)
+local openingScale = Instance.new("UIScale")
+openingScale.Scale = 0.92
+openingScale.Parent = main
+main.BackgroundTransparency = 1
+mainStroke.Transparency = 1
+local closing = false
 
 if savedGuiPosition then
     pcall(function()
@@ -3787,6 +3793,8 @@ minimize.MouseButton1Click:Connect(function()
 end)
 
 close.MouseButton1Click:Connect(function()
+    if closing then return end
+    closing = true
     saveConfig()
 
     UNLOADED = true
@@ -3818,8 +3826,29 @@ close.MouseButton1Click:Connect(function()
     GUILD_COLLECT_ACTIVE = false
     GUILD_QUEST_SESSION += 1
 
+    TweenService:Create(openingScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+        Scale = 0.88
+    }):Play()
+    TweenService:Create(main, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        BackgroundTransparency = 1
+    }):Play()
+    TweenService:Create(mainStroke, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        Transparency = 1
+    }):Play()
+
+    task.wait(0.22)
     gui:Destroy()
 end)
+
+TweenService:Create(openingScale, TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+    Scale = 1
+}):Play()
+TweenService:Create(main, TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    BackgroundTransparency = 0
+}):Play()
+TweenService:Create(mainStroke, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    Transparency = 0.45
+}):Play()
 
 task.spawn(function()
     while not UNLOADED and gui.Parent do
