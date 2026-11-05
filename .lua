@@ -1,4 +1,4 @@
-local Players = game:GetService("Players")
+ Players = game:GetService("Players")
 getgenv().SWS_HUB_UI_STATE = getgenv().SWS_HUB_UI_STATE or {}
 getgenv().SWS_HUB_ANIM = getgenv().SWS_HUB_ANIM or {}
 do
@@ -272,35 +272,35 @@ do
     _G.SWS_HUB_AUTH_TYPE = CurrentType
 end
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
-local HttpService = game:GetService("HttpService")
+ ReplicatedStorage = game:GetService("ReplicatedStorage")
+ TweenService = game:GetService("TweenService")
+ HttpService = game:GetService("HttpService")
 
-local Player = Players.LocalPlayer
-local PlayerGui = Player:WaitForChild("PlayerGui")
-local ZonesFolder = workspace:WaitForChild("Zones")
+ Player = Players.LocalPlayer
+ PlayerGui = Player:WaitForChild("PlayerGui")
+ ZonesFolder = workspace:WaitForChild("Zones")
 
-local MINING_INTERVAL = 0.01
-local TELEPORT_RETRY_DELAY = 0.75
-local TELEPORT_SUCCESS_DISTANCE = 5
-local TELEPORT_SETTLE_DELAY = 0.15
-local ORE_CLEARANCE = 1
-local NEXT_ROCK_DELAY = 0.3
-local SCAN_DELAY = 0.4
-local RESCAN_INTERVAL = 2
-local ERROR_RETRY_DELAY = 1
-local NO_DAMAGE_TIMEOUT = 0.4
-local SKIP_DURATION = 3
+ MINING_INTERVAL = 0.01
+ TELEPORT_RETRY_DELAY = 0.75
+ TELEPORT_SUCCESS_DISTANCE = 5
+ TELEPORT_SETTLE_DELAY = 0.15
+ ORE_CLEARANCE = 1
+ NEXT_ROCK_DELAY = 0.3
+ SCAN_DELAY = 0.4
+ RESCAN_INTERVAL = 2
+ ERROR_RETRY_DELAY = 1
+ NO_DAMAGE_TIMEOUT = 0.4
+ SKIP_DURATION = 3
 
-local AUTO_BUY_INTERVAL = 10
-local CRAFT_REQUEST_DELAY = 0.5
+ AUTO_BUY_INTERVAL = 10
+ CRAFT_REQUEST_DELAY = 0.5
 
-local BOSS_TELEPORT_INTERVAL = 0.10
-local BOSS_ATTACK_INTERVAL = 0.05
+ BOSS_TELEPORT_INTERVAL = 0.10
+ BOSS_ATTACK_INTERVAL = 0.05
 
-local CONFIG_FILE = "SWS_HUB_STU"
+ CONFIG_FILE = "SWS_HUB_STU"
 
-local MinerNames = {
+ MinerNames = {
     "StoneMiner", "CoalMiner", "CopperMiner", "IronMiner",
     "GoldMiner", "RubyMiner", "SapphireMiner", "EmeraldMiner",
     "DiamondMiner", "VoidstoneMiner", "ToxiteMiner", "StarliteMiner",
@@ -310,7 +310,7 @@ local MinerNames = {
     "NebuliteMiner", "SoulstoneMiner", "PumpkinMiner"
 }
 
-local zoneOrder = {
+ zoneOrder = {
     {"Mine1", "Starter Mine"},
     {"Grotto", "Mushroom Grotto"},
     {"Mine2", "Crystal Cave"},
@@ -334,12 +334,12 @@ local zoneOrder = {
     {"Crypt", "Haunted Crypt"}
 }
 
-local knownZoneNames = {}
+ knownZoneNames = {}
 for _, entry in ipairs(zoneOrder) do
     knownZoneNames[entry[1]] = true
 end
 
-local discoveredZones = ZonesFolder:GetChildren()
+ discoveredZones = ZonesFolder:GetChildren()
 table.sort(discoveredZones, function(a, b)
     return a.Name < b.Name
 end)
@@ -355,70 +355,70 @@ for _, zone in ipairs(discoveredZones) do
     end
 end
 
-local BLACK = Color3.fromRGB(5, 5, 5)
-local PANEL = Color3.fromRGB(14, 14, 14)
-local PANEL2 = Color3.fromRGB(22, 22, 22)
-local WHITE = Color3.fromRGB(255, 255, 255)
-local GREY = Color3.fromRGB(155, 155, 155)
+ BLACK = Color3.fromRGB(5, 5, 5)
+ PANEL = Color3.fromRGB(14, 14, 14)
+ PANEL2 = Color3.fromRGB(22, 22, 22)
+ WHITE = Color3.fromRGB(255, 255, 255)
+ GREY = Color3.fromRGB(155, 155, 155)
 
-local RUNNING = false
-local MINING_MANUALLY_STOPPED = false
-local AUTO_BOSS = false
-local AUTO_BUY = false
-local AUTO_PLAYTIME = false
-local AUTO_COLLECT = false
-local AUTO_SELL = false
-local AUTO_SPIN = false
-local AUTO_GUILD_QUESTS = false
-local GUILD_COLLECT_ACTIVE = false
-local GUILD_MINE_ACTIVE = false
-local GUILD_UPGRADE_ACTIVE = false
-local GUILD_MINE_ZONE = nil
-local UNLOADED = false
+ RUNNING = false
+ MINING_MANUALLY_STOPPED = false
+ AUTO_BOSS = false
+ AUTO_BUY = false
+ AUTO_PLAYTIME = false
+ AUTO_COLLECT = false
+ AUTO_SELL = false
+ AUTO_SPIN = false
+ AUTO_GUILD_QUESTS = false
+ GUILD_COLLECT_ACTIVE = false
+ GUILD_MINE_ACTIVE = false
+ GUILD_UPGRADE_ACTIVE = false
+ GUILD_MINE_ZONE = nil
+ UNLOADED = false
 
-local SESSION = 0
-local BOSS_SESSION = 0
-local BUY_SESSION = 0
-local PLAYTIME_SESSION = 0
-local COLLECT_SESSION = 0
-local SELL_SESSION = 0
-local SPIN_SESSION = 0
-local GUILD_QUEST_SESSION = 0
+ SESSION = 0
+ BOSS_SESSION = 0
+ BUY_SESSION = 0
+ PLAYTIME_SESSION = 0
+ COLLECT_SESSION = 0
+ SELL_SESSION = 0
+ SPIN_SESSION = 0
+ GUILD_QUEST_SESSION = 0
 
-local selectedZone
-local selectedMiners = {}
-local availableZones = {}
-local zoneRows = {}
-local minerRows = {}
+ selectedZone
+ selectedMiners = {}
+ availableZones = {}
+ zoneRows = {}
+ minerRows = {}
 
-local selectorExpanded = true
-local guiMinimized = false
-local savedGuiPosition
+ selectorExpanded = true
+ guiMinimized = false
+ savedGuiPosition
 
-local startMining
-local stopMining
+ startMining
+ stopMining
 
-local currentRock
-local trackedRock
-local trackedRockStartHP
-local trackedRockStartTime = 0
+ currentRock
+ trackedRock
+ trackedRockStartHP
+ trackedRockStartTime = 0
 
-local skippedRocks = setmetatable({}, {__mode = "k"})
+ skippedRocks = setmetatable({}, {__mode = "k"})
 
-local nextTeleportAt = 0
-local nextRockAt = 0
-local lastRescan = 0
+ nextTeleportAt = 0
+ nextRockAt = 0
+ lastRescan = 0
 
-local lastBossTeleport = 0
-local lastBossAttack = 0
+ lastBossTeleport = 0
+ lastBossAttack = 0
 
-local MineRemote
+ MineRemote
 
-local savedConfig = {}
-local saveQueued = false
-local configStatusLabel
+ savedConfig = {}
+ saveQueued = false
+ configStatusLabel
 
-local function readConfigFile(fileName)
+ function readConfigFile(fileName)
     if type(readfile) ~= "function" then
         return nil
     end
@@ -446,14 +446,14 @@ local function readConfigFile(fileName)
     return nil
 end
 
-local function loadConfig()
+ function loadConfig()
     local result = readConfigFile(CONFIG_FILE)
     if type(result) == "table" then
         savedConfig = result
     end
 end
 
-local function setConfigStatus(message, success)
+ function setConfigStatus(message, success)
     if configStatusLabel and configStatusLabel.Parent then
         configStatusLabel.Text = "CONFIG: " .. tostring(message)
         configStatusLabel.TextColor3 = success
@@ -462,7 +462,7 @@ local function setConfigStatus(message, success)
     end
 end
 
-local function saveConfig()
+ function saveConfig()
     if type(writefile) ~= "function" then
         setConfigStatus("SAVE FAILED - EXECUTOR HAS NO writefile", false)
         return false
@@ -512,7 +512,7 @@ local function saveConfig()
     return true
 end
 
-local function queueSave()
+ function queueSave()
     if UNLOADED then return end
 
     saveConfig()
@@ -550,13 +550,13 @@ if type(savedConfig.GuiPosition) == "table" then
     savedGuiPosition = savedConfig.GuiPosition
 end
 
-local resumeBoss = savedConfig.AutoBoss == true
-local resumeBuy = savedConfig.AutoBuy == true
-local resumePlaytime = savedConfig.AutoPlaytime == true
-local resumeCollect = savedConfig.AutoCollect == true
-local resumeSell = savedConfig.AutoSell == true
-local resumeSpin = savedConfig.AutoSpin == true
-local resumeGuildQuests = savedConfig.AutoGuildQuests == true
+ resumeBoss = savedConfig.AutoBoss == true
+ resumeBuy = savedConfig.AutoBuy == true
+ resumePlaytime = savedConfig.AutoPlaytime == true
+ resumeCollect = savedConfig.AutoCollect == true
+ resumeSell = savedConfig.AutoSell == true
+ resumeSpin = savedConfig.AutoSpin == true
+ resumeGuildQuests = savedConfig.AutoGuildQuests == true
 
 for _, entry in ipairs(zoneOrder) do
     local zone = ZonesFolder:FindFirstChild(entry[1])
@@ -580,7 +580,7 @@ if savedConfig.SelectedZone then
     end
 end
 
-local function getDisplayName(name)
+ function getDisplayName(name)
     for _, entry in ipairs(availableZones) do
         if entry.Folder == name then
             return entry.Display
@@ -590,22 +590,22 @@ local function getDisplayName(name)
     return tostring(name or "Unknown")
 end
 
-local old = PlayerGui:FindFirstChild("MultiZoneMinerV25")
+ old = PlayerGui:FindFirstChild("MultiZoneMinerV25")
 if old then old:Destroy() end
 
-local gui = Instance.new("ScreenGui")
+ gui = Instance.new("ScreenGui")
 gui.Name = "MultiZoneMinerV25"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = PlayerGui
 
-local function corner(object, radius)
+ function corner(object, radius)
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0, radius or 6)
     c.Parent = object
 end
 
-local function stroke(object, transparency)
+ function stroke(object, transparency)
     local s = Instance.new("UIStroke")
     s.Color = WHITE
     s.Thickness = 1
@@ -614,7 +614,7 @@ local function stroke(object, transparency)
     return s
 end
 
-local function makeButton(parent, text, size, position)
+ function makeButton(parent, text, size, position)
     local b = Instance.new("TextButton")
     b.Size = size
     b.Position = position
@@ -655,10 +655,10 @@ local function makeButton(parent, text, size, position)
     return b
 end
 
-local settingsPageOpen = false
-local guildStatusPageOpen = false
+ settingsPageOpen = false
+ guildStatusPageOpen = false
 
-local main = Instance.new("Frame")
+ main = Instance.new("Frame")
 main.Name = "Main"
 main.Size = UDim2.fromOffset(290, 269)
 main.Position = UDim2.new(0.5, -145, 0.5, -134)
@@ -670,7 +670,7 @@ main.ClipsDescendants = true
 main.Parent = gui
 
 corner(main, 10)
-local mainStroke = stroke(main, 0.45)
+ mainStroke = stroke(main, 0.45)
 
 if savedGuiPosition then
     pcall(function()
@@ -698,7 +698,7 @@ main:GetPropertyChangedSignal("Position"):Connect(function()
     queueSave()
 end)
 
-local title = Instance.new("TextLabel")
+ title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -195, 0, 30)
 title.Position = UDim2.fromOffset(12, 3)
 title.BackgroundTransparency = 1
@@ -746,37 +746,37 @@ task.spawn(function()
     end
 end)
 
-local minersOpenButton = makeButton(
+ minersOpenButton = makeButton(
     main, "FEATURES",
     UDim2.fromOffset(48, 23),
     UDim2.new(1, -113, 0, 5)
 )
 
-local guildStatusOpenButton = makeButton(
+ guildStatusOpenButton = makeButton(
     main, "GUILD",
     UDim2.fromOffset(48, 23),
     UDim2.new(1, -165, 0, 5)
 )
 
-local minimize = makeButton(
+ minimize = makeButton(
     main, "-",
     UDim2.fromOffset(24, 23),
     UDim2.new(1, -57, 0, 5)
 )
 
-local close = makeButton(
+ close = makeButton(
     main, "X",
     UDim2.fromOffset(24, 23),
     UDim2.new(1, -29, 0, 5)
 )
 
-local zoneToggle = makeButton(
+ zoneToggle = makeButton(
     main, "ZONES ▼",
     UDim2.new(1, -20, 0, 23),
     UDim2.fromOffset(10, 35)
 )
 
-local search = Instance.new("TextBox")
+ search = Instance.new("TextBox")
 search.Size = UDim2.new(1, -20, 0, 23)
 search.Position = UDim2.fromOffset(10, 63)
 search.BackgroundColor3 = PANEL
@@ -794,11 +794,11 @@ search.Parent = main
 corner(search, 5)
 stroke(search, 0.8)
 
-local searchPadding = Instance.new("UIPadding")
+ searchPadding = Instance.new("UIPadding")
 searchPadding.PaddingLeft = UDim.new(0, 8)
 searchPadding.Parent = search
 
-local scroll = Instance.new("ScrollingFrame")
+ scroll = Instance.new("ScrollingFrame")
 scroll.Size = UDim2.new(1, -20, 0, 90)
 scroll.Position = UDim2.fromOffset(10, 91)
 scroll.BackgroundColor3 = PANEL
@@ -811,12 +811,12 @@ scroll.Parent = main
 corner(scroll, 6)
 stroke(scroll, 0.85)
 
-local layout = Instance.new("UIListLayout")
+ layout = Instance.new("UIListLayout")
 layout.Padding = UDim.new(0, 3)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Parent = scroll
 
-local scrollPadding = Instance.new("UIPadding")
+ scrollPadding = Instance.new("UIPadding")
 scrollPadding.PaddingTop = UDim.new(0, 5)
 scrollPadding.PaddingLeft = UDim.new(0, 5)
 scrollPadding.PaddingRight = UDim.new(0, 5)
@@ -828,7 +828,7 @@ layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     )
 end)
 
-local selectedLabel = Instance.new("TextLabel")
+ selectedLabel = Instance.new("TextLabel")
 selectedLabel.Size = UDim2.new(1, -20, 0, 17)
 selectedLabel.Position = UDim2.fromOffset(10, 186)
 selectedLabel.BackgroundTransparency = 1
@@ -838,19 +838,19 @@ selectedLabel.Font = Enum.Font.GothamBold
 selectedLabel.TextXAlignment = Enum.TextXAlignment.Left
 selectedLabel.Parent = main
 
-local startButton = makeButton(
+ startButton = makeButton(
     main, "MINING",
     UDim2.fromOffset(85, 32),
     UDim2.fromOffset(10, 209)
 )
 
-local bossButton = makeButton(
+ bossButton = makeButton(
     main, "BOSS: OFF",
     UDim2.fromOffset(85, 32),
     UDim2.fromOffset(102, 209)
 )
 
-local stopButton = makeButton(
+ stopButton = makeButton(
     main, "STOP",
     UDim2.fromOffset(85, 32),
     UDim2.fromOffset(194, 209)
@@ -868,7 +868,7 @@ configStatusLabel.Font = Enum.Font.Gotham
 configStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 configStatusLabel.Parent = main
 
-local minerWindow = Instance.new("Frame")
+ minerWindow = Instance.new("Frame")
 minerWindow.Name = "AutomationSettingsPage"
 minerWindow.Size = UDim2.fromScale(1, 1)
 minerWindow.Position = UDim2.fromOffset(0, 0)
@@ -882,7 +882,7 @@ minerWindow.Parent = main
 corner(minerWindow, 10)
 stroke(minerWindow, 0.45)
 
-local guildWindow = Instance.new("Frame")
+ guildWindow = Instance.new("Frame")
 guildWindow.Name = "GuildStatusPage"
 guildWindow.Size = UDim2.fromScale(1, 1)
 guildWindow.Position = UDim2.fromOffset(0, 0)
@@ -895,7 +895,7 @@ guildWindow.Parent = main
 corner(guildWindow, 10)
 stroke(guildWindow, 0.45)
 
-local guildTitle = Instance.new("TextLabel")
+ guildTitle = Instance.new("TextLabel")
 guildTitle.Size = UDim2.new(1, -65, 0, 32)
 guildTitle.Position = UDim2.fromOffset(12, 3)
 guildTitle.BackgroundTransparency = 1
@@ -906,13 +906,13 @@ guildTitle.Font = Enum.Font.GothamBold
 guildTitle.TextXAlignment = Enum.TextXAlignment.Left
 guildTitle.Parent = guildWindow
 
-local guildBackButton = makeButton(
+ guildBackButton = makeButton(
     guildWindow, "BACK",
     UDim2.fromOffset(48, 23),
     UDim2.new(1, -58, 0, 5)
 )
 
-local guildRefreshButton = makeButton(
+ guildRefreshButton = makeButton(
     guildWindow, "REFRESH QUESTS",
     UDim2.new(1, -20, 0, 25),
     UDim2.fromOffset(10, 37)
@@ -920,7 +920,7 @@ local guildRefreshButton = makeButton(
 
 guildRefreshButton.BackgroundColor3 = Color3.fromRGB(42, 54, 70)
 
-local guildRefreshStatus = Instance.new("TextLabel")
+ guildRefreshStatus = Instance.new("TextLabel")
 guildRefreshStatus.Size = UDim2.new(1, -20, 0, 18)
 guildRefreshStatus.Position = UDim2.fromOffset(10, 66)
 guildRefreshStatus.BackgroundTransparency = 1
@@ -931,7 +931,7 @@ guildRefreshStatus.Font = Enum.Font.Gotham
 guildRefreshStatus.TextXAlignment = Enum.TextXAlignment.Left
 guildRefreshStatus.Parent = guildWindow
 
-local guildQuestScroll = Instance.new("ScrollingFrame")
+ guildQuestScroll = Instance.new("ScrollingFrame")
 guildQuestScroll.Name = "UncompletedQuests"
 guildQuestScroll.Size = UDim2.new(1, -20, 1, -99)
 guildQuestScroll.Position = UDim2.fromOffset(10, 87)
@@ -945,12 +945,12 @@ guildQuestScroll.Parent = guildWindow
 corner(guildQuestScroll, 6)
 stroke(guildQuestScroll, 0.85)
 
-local guildQuestLayout = Instance.new("UIListLayout")
+ guildQuestLayout = Instance.new("UIListLayout")
 guildQuestLayout.Padding = UDim.new(0, 6)
 guildQuestLayout.SortOrder = Enum.SortOrder.LayoutOrder
 guildQuestLayout.Parent = guildQuestScroll
 
-local guildQuestPadding = Instance.new("UIPadding")
+ guildQuestPadding = Instance.new("UIPadding")
 guildQuestPadding.PaddingTop = UDim.new(0, 6)
 guildQuestPadding.PaddingLeft = UDim.new(0, 6)
 guildQuestPadding.PaddingRight = UDim.new(0, 6)
@@ -961,7 +961,7 @@ guildQuestLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(functio
     guildQuestScroll.CanvasSize = UDim2.fromOffset(0, guildQuestLayout.AbsoluteContentSize.Y + 14)
 end)
 
-local minerTitle = Instance.new("TextLabel")
+ minerTitle = Instance.new("TextLabel")
 minerTitle.Size = UDim2.new(1, -45, 0, 32)
 minerTitle.Position = UDim2.fromOffset(12, 3)
 minerTitle.BackgroundTransparency = 1
@@ -972,13 +972,13 @@ minerTitle.Font = Enum.Font.GothamBold
 minerTitle.TextXAlignment = Enum.TextXAlignment.Left
 minerTitle.Parent = minerWindow
 
-local minerClose = makeButton(
+ minerClose = makeButton(
     minerWindow, "BACK",
     UDim2.fromOffset(48, 23),
     UDim2.new(1, -58, 0, 5)
 )
 
-local minerDescription = Instance.new("TextLabel")
+ minerDescription = Instance.new("TextLabel")
 minerDescription.Size = UDim2.new(1, -20, 0, 30)
 minerDescription.Position = UDim2.fromOffset(10, 35)
 minerDescription.BackgroundTransparency = 1
@@ -989,7 +989,7 @@ minerDescription.Font = Enum.Font.Gotham
 minerDescription.TextXAlignment = Enum.TextXAlignment.Left
 minerDescription.Parent = minerWindow
 
-local minerCount = Instance.new("TextLabel")
+ minerCount = Instance.new("TextLabel")
 minerCount.Size = UDim2.new(1, -20, 0, 17)
 minerCount.Position = UDim2.fromOffset(10, 62)
 minerCount.BackgroundTransparency = 1
@@ -999,7 +999,7 @@ minerCount.Font = Enum.Font.GothamBold
 minerCount.TextXAlignment = Enum.TextXAlignment.Left
 minerCount.Parent = minerWindow
 
-local minerScroll = Instance.new("ScrollingFrame")
+ minerScroll = Instance.new("ScrollingFrame")
 minerScroll.Name = "FeaturesScroll"
 minerScroll.Size = UDim2.new(1, -20, 1, -94)
 minerScroll.Position = UDim2.fromOffset(10, 83)
@@ -1013,12 +1013,12 @@ minerScroll.Parent = minerWindow
 corner(minerScroll, 6)
 stroke(minerScroll, 0.85)
 
-local minerLayout = Instance.new("UIListLayout")
+ minerLayout = Instance.new("UIListLayout")
 minerLayout.Padding = UDim.new(0, 2)
 minerLayout.SortOrder = Enum.SortOrder.LayoutOrder
 minerLayout.Parent = minerScroll
 
-local minerPadding = Instance.new("UIPadding")
+ minerPadding = Instance.new("UIPadding")
 minerPadding.PaddingTop = UDim.new(0, 5)
 minerPadding.PaddingLeft = UDim.new(0, 5)
 minerPadding.PaddingRight = UDim.new(0, 5)
@@ -1030,7 +1030,7 @@ minerLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     )
 end)
 
-local function getSelectedMinerCount()
+ function getSelectedMinerCount()
     local count = 0
 
     for _, name in ipairs(MinerNames) do
@@ -1042,14 +1042,14 @@ local function getSelectedMinerCount()
     return count
 end
 
-local function updateMinerCount()
+ function updateMinerCount()
     minerCount.Text = "SELECTED: "
         .. getSelectedMinerCount()
         .. " / "
         .. #MinerNames
 end
 
-local function updateMinerRows()
+ function updateMinerRows()
     for _, name in ipairs(MinerNames) do
         local row = minerRows[name]
 
@@ -1091,13 +1091,13 @@ for index, name in ipairs(MinerNames) do
     end)
 end
 
-local selectAllButton = makeButton(
+ selectAllButton = makeButton(
     minerScroll, "SELECT ALL",
     UDim2.new(1, -3, 0, 23),
     UDim2.fromOffset(0, 0)
 )
 
-local deselectAllButton = makeButton(
+ deselectAllButton = makeButton(
     minerScroll, "DESELECT ALL",
     UDim2.new(1, -3, 0, 23),
     UDim2.fromOffset(0, 0)
@@ -1106,15 +1106,15 @@ local deselectAllButton = makeButton(
 selectAllButton.LayoutOrder = 100
 deselectAllButton.LayoutOrder = 101
 
-local minerListExpanded = false
-local minerSelectionHeader = makeButton(
+ minerListExpanded = false
+ minerSelectionHeader = makeButton(
     minerScroll, "SELECT MINERS  [+]",
     UDim2.new(1, -3, 0, 24),
     UDim2.fromOffset(0, 0)
 )
 minerSelectionHeader.LayoutOrder = 1
 
-local function setMinerListExpanded(expanded, animate)
+ function setMinerListExpanded(expanded, animate)
     minerListExpanded = expanded == true
     minerSelectionHeader.Text = minerListExpanded and "SELECT MINERS  [-]" or "SELECT MINERS  [+]"
     for _, name in ipairs(MinerNames) do
@@ -1154,7 +1154,7 @@ end)
 
 setMinerListExpanded(false, false)
 
-local purchaseStatus = Instance.new("TextLabel")
+ purchaseStatus = Instance.new("TextLabel")
 purchaseStatus.Size = UDim2.new(1, -6, 0, 14)
 purchaseStatus.Position = UDim2.fromOffset(0, 0)
 purchaseStatus.BackgroundTransparency = 1
@@ -1166,19 +1166,19 @@ purchaseStatus.TextXAlignment = Enum.TextXAlignment.Left
 purchaseStatus.Parent = minerScroll
 purchaseStatus.LayoutOrder = 103
 
-local autoBuyButton = makeButton(
+ autoBuyButton = makeButton(
     minerScroll, "AUTO BUY: OFF",
     UDim2.new(1, -3, 0, 24),
     UDim2.fromOffset(0, 0)
 )
 
-local stopBuyButton = makeButton(
+ stopBuyButton = makeButton(
     minerScroll, "STOP",
     UDim2.new(1, -3, 0, 24),
     UDim2.fromOffset(0, 0)
 )
 
-local playtimeStatus = Instance.new("TextLabel")
+ playtimeStatus = Instance.new("TextLabel")
 playtimeStatus.Size = UDim2.new(1, -6, 0, 14)
 playtimeStatus.Position = UDim2.fromOffset(0, 0)
 playtimeStatus.BackgroundTransparency = 1
@@ -1190,13 +1190,13 @@ playtimeStatus.TextXAlignment = Enum.TextXAlignment.Left
 playtimeStatus.Parent = minerScroll
 playtimeStatus.LayoutOrder = 106
 
-local playtimeButton = makeButton(
+ playtimeButton = makeButton(
     minerScroll, "PLAYTIME: OFF",
     UDim2.new(1, -3, 0, 24),
     UDim2.fromOffset(0, 0)
 )
 
-local collectStatus = Instance.new("TextLabel")
+ collectStatus = Instance.new("TextLabel")
 collectStatus.Size = UDim2.new(1, -6, 0, 14)
 collectStatus.Position = UDim2.fromOffset(0, 0)
 collectStatus.BackgroundTransparency = 1
@@ -1208,13 +1208,13 @@ collectStatus.TextXAlignment = Enum.TextXAlignment.Left
 collectStatus.Parent = minerScroll
 collectStatus.LayoutOrder = 108
 
-local collectButton = makeButton(
+ collectButton = makeButton(
     minerScroll, "AUTO COLLECT: OFF",
     UDim2.new(1, -3, 0, 24),
     UDim2.fromOffset(0, 0)
 )
 
-local guildQuestStatus = Instance.new("TextLabel")
+ guildQuestStatus = Instance.new("TextLabel")
 guildQuestStatus.Size = UDim2.new(1, -6, 0, 14)
 guildQuestStatus.Position = UDim2.fromOffset(0, 0)
 guildQuestStatus.BackgroundTransparency = 1
@@ -1226,13 +1226,13 @@ guildQuestStatus.TextXAlignment = Enum.TextXAlignment.Left
 guildQuestStatus.Parent = minerScroll
 guildQuestStatus.LayoutOrder = 110
 
-local guildQuestButton = makeButton(
+ guildQuestButton = makeButton(
     minerScroll, "GUILD QUESTS: OFF",
     UDim2.new(1, -3, 0, 24),
     UDim2.fromOffset(0, 0)
 )
 
-local sellStatus = Instance.new("TextLabel")
+ sellStatus = Instance.new("TextLabel")
 sellStatus.Size = UDim2.new(1, -6, 0, 14)
 sellStatus.Position = UDim2.fromOffset(0, 0)
 sellStatus.BackgroundTransparency = 1
@@ -1244,7 +1244,7 @@ sellStatus.TextXAlignment = Enum.TextXAlignment.Left
 sellStatus.Parent = minerScroll
 sellStatus.LayoutOrder = 112
 
-local sellButton = makeButton(
+ sellButton = makeButton(
     minerScroll, "AUTO SELL: OFF",
     UDim2.new(1, -3, 0, 24),
     UDim2.fromOffset(0, 0)
@@ -1257,7 +1257,7 @@ collectButton.LayoutOrder = 109
 guildQuestButton.LayoutOrder = 111
 sellButton.LayoutOrder = 113
 
-local spinStatus = Instance.new("TextLabel")
+ spinStatus = Instance.new("TextLabel")
 spinStatus.Size = UDim2.new(1, -6, 0, 14)
 spinStatus.Position = UDim2.fromOffset(0, 0)
 spinStatus.BackgroundTransparency = 1
@@ -1269,24 +1269,24 @@ spinStatus.TextXAlignment = Enum.TextXAlignment.Left
 spinStatus.Parent = minerScroll
 spinStatus.LayoutOrder = 114
 
-local spinButton = makeButton(
+ spinButton = makeButton(
     minerScroll, "AUTO SPIN: OFF",
     UDim2.new(1, -3, 0, 24),
     UDim2.fromOffset(0, 0)
 )
 spinButton.LayoutOrder = 115
 
-local function setStatus(message)
+ function setStatus(message)
     return
 end
 
-local function setPurchaseStatus(message)
+ function setPurchaseStatus(message)
     if not UNLOADED and purchaseStatus.Parent then
         purchaseStatus.Text = tostring(message)
     end
 end
 
-local function getCraftRemote()
+ function getCraftRemote()
     local shared = ReplicatedStorage:FindFirstChild("Shared")
     local remotes = shared and shared:FindFirstChild("Remotes")
     local remote = remotes and remotes:FindFirstChild("CraftMiner")
@@ -1298,14 +1298,14 @@ local function getCraftRemote()
     return nil
 end
 
-local function updateAutoBuyButton()
+ function updateAutoBuyButton()
     autoBuyButton.Text = AUTO_BUY and "AUTO BUY: ON" or "AUTO BUY: OFF"
     autoBuyButton.BackgroundColor3 = AUTO_BUY
         and Color3.fromRGB(55, 55, 55)
         or PANEL2
 end
 
-local function stopAutoBuy()
+ function stopAutoBuy()
     AUTO_BUY = false
     BUY_SESSION += 1
 
@@ -1314,7 +1314,7 @@ local function stopAutoBuy()
     queueSave()
 end
 
-local function autoBuyWorker(mySession)
+ function autoBuyWorker(mySession)
     local craftRemote = getCraftRemote()
 
     if not craftRemote then
@@ -1379,7 +1379,7 @@ local function autoBuyWorker(mySession)
     end
 end
 
-local function startAutoBuy()
+ function startAutoBuy()
     if AUTO_BUY or UNLOADED then return end
 
     if getSelectedMinerCount() == 0 then
@@ -1427,7 +1427,7 @@ end)
 
 stopBuyButton.MouseButton1Click:Connect(stopAutoBuy)
 
-local function getPlaytimeRemote()
+ function getPlaytimeRemote()
     local shared = ReplicatedStorage:FindFirstChild("Shared")
     local remotes = shared and shared:FindFirstChild("Remotes")
     local remote = remotes and remotes:FindFirstChild("ClaimPlaytimeGift")
@@ -1439,7 +1439,7 @@ local function getPlaytimeRemote()
     return nil
 end
 
-local function updatePlaytimeButton()
+ function updatePlaytimeButton()
     playtimeButton.Text = AUTO_PLAYTIME and "PLAYTIME: ON" or "PLAYTIME: OFF"
     playtimeButton.BackgroundColor3 = AUTO_PLAYTIME
         and Color3.fromRGB(55, 55, 55)
@@ -1447,14 +1447,14 @@ local function updatePlaytimeButton()
     playtimeStatus.Text = AUTO_PLAYTIME and "PLAYTIME CLAIM: RUNNING" or "PLAYTIME: OFF"
 end
 
-local function stopAutoPlaytime()
+ function stopAutoPlaytime()
     AUTO_PLAYTIME = false
     PLAYTIME_SESSION += 1
     updatePlaytimeButton()
     queueSave()
 end
 
-local function autoPlaytimeWorker(mySession)
+ function autoPlaytimeWorker(mySession)
     local remote = getPlaytimeRemote()
 
     if not remote then
@@ -1503,7 +1503,7 @@ local function autoPlaytimeWorker(mySession)
     end
 end
 
-local function startAutoPlaytime()
+ function startAutoPlaytime()
     if AUTO_PLAYTIME or UNLOADED then return end
 
     if not getPlaytimeRemote() then
@@ -1542,7 +1542,7 @@ playtimeButton.MouseButton1Click:Connect(function()
     end
 end)
 
-local function getSellOresRemote()
+ function getSellOresRemote()
     local shared = ReplicatedStorage:FindFirstChild("Shared")
     local remotes = shared and shared:FindFirstChild("Remotes")
     local remote = remotes and remotes:FindFirstChild("SellOres")
@@ -1554,7 +1554,7 @@ local function getSellOresRemote()
     return nil
 end
 
-local function updateAutoSellButton()
+ function updateAutoSellButton()
     if not sellButton.Parent then return end
 
     sellButton.Text = AUTO_SELL and "AUTO SELL: ON" or "AUTO SELL: OFF"
@@ -1564,14 +1564,14 @@ local function updateAutoSellButton()
     sellStatus.Text = AUTO_SELL and "AUTO SELL: RUNNING" or "AUTO SELL: OFF"
 end
 
-local function stopAutoSell()
+ function stopAutoSell()
     AUTO_SELL = false
     SELL_SESSION += 1
     updateAutoSellButton()
     queueSave()
 end
 
-local function autoSellWorker(mySession)
+ function autoSellWorker(mySession)
     local remote = getSellOresRemote()
 
     if not remote then
@@ -1597,7 +1597,7 @@ local function autoSellWorker(mySession)
     end
 end
 
-local function startAutoSell()
+ function startAutoSell()
     if AUTO_SELL or UNLOADED then return end
 
     if not getSellOresRemote() then
@@ -1636,7 +1636,7 @@ sellButton.MouseButton1Click:Connect(function()
     end
 end)
 
-local function getSpinRemote()
+ function getSpinRemote()
     local shared = ReplicatedStorage:FindFirstChild("Shared")
     local remotes = shared and shared:FindFirstChild("Remotes")
     local remote = remotes and remotes:FindFirstChild("SpinWheel")
@@ -1648,7 +1648,7 @@ local function getSpinRemote()
     return nil
 end
 
-local function updateAutoSpinButton()
+ function updateAutoSpinButton()
     if not spinButton.Parent then return end
 
     spinButton.Text = AUTO_SPIN and "AUTO SPIN: ON" or "AUTO SPIN: OFF"
@@ -1658,14 +1658,14 @@ local function updateAutoSpinButton()
     spinStatus.Text = AUTO_SPIN and "AUTO SPIN: RUNNING" or "AUTO SPIN: OFF"
 end
 
-local function stopAutoSpin()
+ function stopAutoSpin()
     AUTO_SPIN = false
     SPIN_SESSION += 1
     updateAutoSpinButton()
     queueSave()
 end
 
-local function autoSpinWorker(mySession)
+ function autoSpinWorker(mySession)
     local remote = getSpinRemote()
 
     if not remote then
@@ -1691,7 +1691,7 @@ local function autoSpinWorker(mySession)
     end
 end
 
-local function startAutoSpin()
+ function startAutoSpin()
     if AUTO_SPIN or UNLOADED then return end
 
     if not getSpinRemote() then
@@ -1730,7 +1730,7 @@ spinButton.MouseButton1Click:Connect(function()
     end
 end)
 
-local function getCollectPrompt()
+ function getCollectPrompt()
     local plots = workspace:FindFirstChild("Plots")
     local plot = plots and plots:FindFirstChild("Plot1")
     local collector = plot and plot:FindFirstChild("Collector")
@@ -1744,7 +1744,7 @@ local function getCollectPrompt()
     return nil
 end
 
-local function updateAutoCollectButton()
+ function updateAutoCollectButton()
     if not collectButton.Parent then return end
 
     collectButton.Text = AUTO_COLLECT and "AUTO COLLECT: ON" or "AUTO COLLECT: OFF"
@@ -1754,14 +1754,14 @@ local function updateAutoCollectButton()
     collectStatus.Text = AUTO_COLLECT and "AUTO COLLECT: RUNNING" or "AUTO COLLECT: OFF"
 end
 
-local function stopAutoCollect()
+ function stopAutoCollect()
     AUTO_COLLECT = false
     COLLECT_SESSION += 1
     updateAutoCollectButton()
     queueSave()
 end
 
-local function autoCollectWorker(mySession)
+ function autoCollectWorker(mySession)
     while AUTO_COLLECT and not UNLOADED and COLLECT_SESSION == mySession do
         local prompt = getCollectPrompt()
 
@@ -1775,7 +1775,7 @@ local function autoCollectWorker(mySession)
     end
 end
 
-local function startAutoCollect()
+ function startAutoCollect()
     if AUTO_COLLECT or UNLOADED then return end
 
     if type(fireproximityprompt) ~= "function" then
@@ -1814,11 +1814,11 @@ collectButton.MouseButton1Click:Connect(function()
     end
 end)
 
-local updateLayout
-local pageReturnPosition
-local refreshGuildStatus
+ updateLayout
+ pageReturnPosition
+ refreshGuildStatus
 
-local function showMainPage()
+ function showMainPage()
     settingsPageOpen = false
     guildStatusPageOpen = false
     for _, page in ipairs({minerWindow, guildWindow}) do
@@ -1842,7 +1842,7 @@ local function showMainPage()
     if updateLayout then updateLayout(false) end
 end
 
-local function showSettingsPage()
+ function showSettingsPage()
     if guiMinimized then
         guiMinimized = false
         queueSave()
@@ -1860,7 +1860,7 @@ local function showSettingsPage()
     }):Play()
 end
 
-local function showGuildStatusPage()
+ function showGuildStatusPage()
     if guiMinimized then
         guiMinimized = false
         queueSave()
@@ -1898,7 +1898,7 @@ guildRefreshButton.MouseButton1Click:Connect(function()
     refreshGuildStatus()
 end)
 
-local function updateSelection()
+ function updateSelection()
     selectedLabel.Text = "ZONE: " .. getDisplayName(selectedZone)
 
     for zoneName, row in pairs(zoneRows) do
@@ -1915,7 +1915,7 @@ local function updateSelection()
     end
 end
 
-local function refreshZoneSearch()
+ function refreshZoneSearch()
     local query = string.lower(search.Text)
 
     for _, entry in ipairs(availableZones) do
@@ -1969,19 +1969,19 @@ end
 updateSelection()
 search:GetPropertyChangedSignal("Text"):Connect(refreshZoneSearch)
 
-local function getRocksFolder(zoneName)
+ function getRocksFolder(zoneName)
     local zone = ZonesFolder:FindFirstChild(zoneName)
     return zone and zone:FindFirstChild("Rocks")
 end
 
-local function getRockPart(rock)
+ function getRockPart(rock)
     if not rock then return nil end
 
     return rock.PrimaryPart
         or rock:FindFirstChildWhichIsA("BasePart", true)
 end
 
-local function getPositionAboveOre(rock, root)
+ function getPositionAboveOre(rock, root)
     if not rock or not root then return nil end
 
     local success, boxCFrame, boxSize = pcall(function()
@@ -2002,7 +2002,7 @@ local function getPositionAboveOre(rock, root)
     )
 end
 
-local function validRock(rock, zoneName)
+ function validRock(rock, zoneName)
     if not rock or not rock:IsA("Model") then
         return false
     end
@@ -2017,7 +2017,7 @@ local function validRock(rock, zoneName)
     return typeof(hp) == "number" and hp > 0
 end
 
-local function getCharacterParts()
+ function getCharacterParts()
     local character = Player.Character
 
     if not character then return nil, nil end
@@ -2032,7 +2032,7 @@ local function getCharacterParts()
     return humanoid, root
 end
 
-local function getMineRemote()
+ function getMineRemote()
     local shared = ReplicatedStorage:FindFirstChild("Shared")
     local remotes = shared and shared:FindFirstChild("Remotes")
     local remote = remotes and remotes:FindFirstChild("MineRock")
@@ -2044,22 +2044,22 @@ local function getMineRemote()
     return nil
 end
 
-local function getDiamondFist()
+ function getDiamondFist()
     local adminEvents = workspace:FindFirstChild("AdminEvents")
     return adminEvents and adminEvents:FindFirstChild("DiamondFist")
 end
 
-local function getRockBoss()
+ function getRockBoss()
     local adminEvents = workspace:FindFirstChild("AdminEvents")
     return adminEvents and adminEvents:FindFirstChild("RockBoss")
 end
 
-local function getGemPinata()
+ function getGemPinata()
     local adminEvents = workspace:FindFirstChild("AdminEvents")
     return adminEvents and adminEvents:FindFirstChild("GemPinata")
 end
 
-local function getBossFistPart(boss, root)
+ function getBossFistPart(boss, root)
     if not boss then return nil end
 
     local candidates = {}
@@ -2101,7 +2101,7 @@ local function getBossFistPart(boss, root)
     return candidates[1]
 end
 
-local function getBossHealthObject(boss)
+ function getBossHealthObject(boss)
     if not boss then return nil end
 
     if boss:IsA("Model") then
@@ -2111,7 +2111,7 @@ local function getBossHealthObject(boss)
     return nil
 end
 
-local function getBossPosition(boss)
+ function getBossPosition(boss)
     if not boss then return nil end
 
     if boss:IsA("BasePart") then
@@ -2132,7 +2132,7 @@ local function getBossPosition(boss)
     return part and part.CFrame
 end
 
-local function getBossHealth(boss)
+ function getBossHealth(boss)
     if not boss then return nil end
 
     local humanoid = getBossHealthObject(boss)
@@ -2169,7 +2169,7 @@ local function getBossHealth(boss)
     return nil
 end
 
-local function teleportToBossTarget(root, targetCFrame)
+ function teleportToBossTarget(root, targetCFrame)
     if not root or not targetCFrame then
         return false
     end
@@ -2183,14 +2183,14 @@ local function teleportToBossTarget(root, targetCFrame)
     return success
 end
 
-local function updateBossButton()
+ function updateBossButton()
     bossButton.Text = AUTO_BOSS and "BOSS: ON" or "BOSS: OFF"
     bossButton.BackgroundColor3 = AUTO_BOSS
         and Color3.fromRGB(55, 55, 55)
         or PANEL2
 end
 
-local function stopBoss()
+ function stopBoss()
     AUTO_BOSS = false
     BOSS_SESSION += 1
 
@@ -2198,7 +2198,7 @@ local function stopBoss()
     queueSave()
 end
 
-local function teleportToZone(zoneName)
+ function teleportToZone(zoneName)
     if UNLOADED or not zoneName then
         return false
     end
@@ -2222,17 +2222,17 @@ local function teleportToZone(zoneName)
     return true
 end
 
-local function teleportToSelectedZone()
+ function teleportToSelectedZone()
     return teleportToZone(selectedZone)
 end
 
-local function stripRichText(value)
+ function stripRichText(value)
     value = tostring(value or "")
     value = value:gsub("<[^>]->", "")
     return value:gsub("&nbsp;", " ")
 end
 
-local function getGuildQuestStates()
+ function getGuildQuestStates()
     local hud = PlayerGui:FindFirstChild("Hud")
     local windows = hud and hud:FindFirstChild("Windows")
     local guild = windows and windows:FindFirstChild("Guild", true)
@@ -2386,7 +2386,7 @@ local function getGuildQuestStates()
     return states
 end
 
-local function triggerNativeGuildRefresh()
+ function triggerNativeGuildRefresh()
     local shared = ReplicatedStorage:FindFirstChild("Shared")
     local remotes = shared and shared:FindFirstChild("Remotes")
     local guildRemote = remotes and remotes:FindFirstChild("Guild")
@@ -2405,7 +2405,7 @@ local function triggerNativeGuildRefresh()
     return false, "GUILD REFRESH FAILED: " .. tostring(result):sub(1, 45)
 end
 
-local function clearGuildQuestCards()
+ function clearGuildQuestCards()
     for _, child in ipairs(guildQuestScroll:GetChildren()) do
         if child ~= guildQuestLayout and child ~= guildQuestPadding then
             child:Destroy()
@@ -2413,7 +2413,7 @@ local function clearGuildQuestCards()
     end
 end
 
-local function renderGuildQuestStates(states)
+ function renderGuildQuestStates(states)
     clearGuildQuestCards()
     states = states or {}
 
@@ -2494,7 +2494,7 @@ local function renderGuildQuestStates(states)
     return #states - completed, completed
 end
 
-local guildRefreshSession = 0
+ guildRefreshSession = 0
 refreshGuildStatus = function()
     if UNLOADED then return end
     guildRefreshSession += 1
@@ -2554,7 +2554,7 @@ task.defer(function()
     end
 end)
 
-local function resolveGuildQuestZone(description)
+ function resolveGuildQuestZone(description)
     local lower = string.lower(stripRichText(description))
     for _, entry in ipairs(zoneOrder) do
         local folderName = entry[1]
@@ -2567,7 +2567,7 @@ local function resolveGuildQuestZone(description)
     return nil, nil
 end
 
-local function isGuildMiningQuest(state)
+ function isGuildMiningQuest(state)
     if not state or state.Done then return false end
     local lower = state.Lower
     local hasMiningTarget = string.find(lower, "rock", 1, true)
@@ -2578,14 +2578,14 @@ local function isGuildMiningQuest(state)
     return hasMiningTarget ~= nil and hasMiningVerb ~= nil
 end
 
-local function normalizeQuestDescription(value)
+ function normalizeQuestDescription(value)
     value = stripRichText(value)
     value = value:gsub("✔", "")
     value = value:gsub("^%s+", ""):gsub("%s+$", "")
     return string.lower(value)
 end
 
-local function findGuildQuestByDescription(states, description, slot)
+ function findGuildQuestByDescription(states, description, slot)
     local wanted = normalizeQuestDescription(description)
     for _, state in ipairs(states) do
         if state.Slot == slot
@@ -2596,7 +2596,7 @@ local function findGuildQuestByDescription(states, description, slot)
     return nil
 end
 
-local function getGuildCollectQuestState(states)
+ function getGuildCollectQuestState(states)
     for _, state in ipairs(states or getGuildQuestStates()) do
         if not state.Done and string.find(state.Lower, "collect your plot coins", 1, true) then
             return state
@@ -2605,7 +2605,7 @@ local function getGuildCollectQuestState(states)
     return nil
 end
 
-local function getGuildUpgradeQuestState(states)
+ function getGuildUpgradeQuestState(states)
     for _, state in ipairs(states or getGuildQuestStates()) do
         if not state.Done and string.find(state.Lower, "upgrad", 1, true) then
             return state
@@ -2614,7 +2614,7 @@ local function getGuildUpgradeQuestState(states)
     return nil
 end
 
-local function getGuildUpgradeAmount(state)
+ function getGuildUpgradeAmount(state)
     local current, total = tostring(state.Progress or ""):match("(%d+)%s*/%s*(%d+)")
     if total then
         return math.max(1, tonumber(total) - tonumber(current))
@@ -2625,7 +2625,7 @@ local function getGuildUpgradeAmount(state)
     return amount and math.max(1, tonumber(amount)) or nil
 end
 
-local function updateGuildQuestButton(message)
+ function updateGuildQuestButton(message)
     if not guildQuestButton or not guildQuestButton.Parent then return end
     guildQuestButton.Text = AUTO_GUILD_QUESTS
         and "GUILD QUESTS: ON" or "GUILD QUESTS: OFF"
@@ -2648,7 +2648,7 @@ local function updateGuildQuestButton(message)
     end
 end
 
-local function resetMiningAfterGuildTrip()
+ function resetMiningAfterGuildTrip()
     currentRock = nil
     trackedRock = nil
     trackedRockStartHP = nil
@@ -2658,7 +2658,7 @@ local function resetMiningAfterGuildTrip()
     lastRescan = 0
 end
 
-local function completeGuildCollectQuest(mySession, quest)
+ function completeGuildCollectQuest(mySession, quest)
     if type(fireproximityprompt) ~= "function" then
         updateGuildQuestButton("GUILD QUEST: PROMPT API MISSING")
         task.wait(2)
@@ -2696,7 +2696,7 @@ local function completeGuildCollectQuest(mySession, quest)
     end
 end
 
-local function completeGuildUpgradeQuest(mySession, quest)
+ function completeGuildUpgradeQuest(mySession, quest)
     local amount = getGuildUpgradeAmount(quest)
     if not amount then
         updateGuildQuestButton("UPGRADE QUEST: CANNOT READ REQUIRED AMOUNT")
@@ -2762,7 +2762,7 @@ local function completeGuildUpgradeQuest(mySession, quest)
     end
 end
 
-local function completeGuildMiningQuest(mySession, quest, zoneName, displayName)
+ function completeGuildMiningQuest(mySession, quest, zoneName, displayName)
     local rocksFolder = getRocksFolder(zoneName)
     if not rocksFolder then
         updateGuildQuestButton("QUEST ZONE LOCKED / ROCKS NOT FOUND: " .. string.upper(displayName))
@@ -2825,7 +2825,7 @@ local function completeGuildMiningQuest(mySession, quest, zoneName, displayName)
     end
 end
 
-local function getGuildResetSeconds()
+ function getGuildResetSeconds()
     local hud = PlayerGui:FindFirstChild("Hud")
     local windows = hud and hud:FindFirstChild("Windows")
     local guild = windows and windows:FindFirstChild("Guild", true)
@@ -2854,11 +2854,11 @@ local function getGuildResetSeconds()
     return nil
 end
 
-local function isGuildPlaytimeQuest(state)
+ function isGuildPlaytimeQuest(state)
     return state and string.find(state.Lower, "play for", 1, true) ~= nil
 end
 
-local function guildQuestWorker(mySession)
+ function guildQuestWorker(mySession)
     while AUTO_GUILD_QUESTS and not UNLOADED
         and GUILD_QUEST_SESSION == mySession do
 
@@ -2943,14 +2943,14 @@ local function guildQuestWorker(mySession)
     end
 end
 
-local function stopGuildQuestAutomation()
+ function stopGuildQuestAutomation()
     AUTO_GUILD_QUESTS = false
     GUILD_QUEST_SESSION += 1
     updateGuildQuestButton()
     queueSave()
 end
 
-local function startGuildQuestAutomation()
+ function startGuildQuestAutomation()
     if AUTO_GUILD_QUESTS or UNLOADED then return end
 
     AUTO_GUILD_QUESTS = true
@@ -2991,7 +2991,7 @@ guildQuestButton.MouseButton1Click:Connect(function()
     end
 end)
 
-local function bossWorker(mySession)
+ function bossWorker(mySession)
     MineRemote = getMineRemote()
 
     if not MineRemote then
@@ -3166,7 +3166,7 @@ local function bossWorker(mySession)
     end
 end
 
-local function startBoss()
+ function startBoss()
     if AUTO_BOSS or UNLOADED then return end
     if not getMineRemote() then return end
 
@@ -3204,7 +3204,7 @@ bossButton.MouseButton1Click:Connect(function()
     end
 end)
 
-local function findRock(zoneName)
+ function findRock(zoneName)
     local folder = getRocksFolder(zoneName)
 
     if not folder then return nil end
@@ -3242,7 +3242,7 @@ local function findRock(zoneName)
     return nearestLucky or nearestNormal
 end
 
-local function rescanZone(zoneName)
+ function rescanZone(zoneName)
     if not getRocksFolder(zoneName) then
         currentRock = nil
         return false
@@ -3280,7 +3280,7 @@ local function rescanZone(zoneName)
     return true
 end
 
-local function miningCycle(mySession)
+ function miningCycle(mySession)
     if not RUNNING or SESSION ~= mySession then return end
 
     if GUILD_COLLECT_ACTIVE then
@@ -3434,7 +3434,7 @@ local function miningCycle(mySession)
     end
 end
 
-local function miningWorker(mySession)
+ function miningWorker(mySession)
     while RUNNING and not UNLOADED and SESSION == mySession do
         local success = xpcall(function()
             miningCycle(mySession)
@@ -3506,7 +3506,7 @@ stopMining = function()
     lastRescan = 0
 end
 
-local function visitGuildPlot()
+ function visitGuildPlot()
     if UNLOADED or GUILD_MINE_ACTIVE or GUILD_COLLECT_ACTIVE then
         return
     end
