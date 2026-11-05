@@ -259,7 +259,11 @@ verifyButton.MouseButton1Click:Connect(function()
         if decoded.valid == true then
             verified = true
             accessType = decoded.type or "24h"
-            expiresAt = accessType == "permanent" and nil or (os.time() + 86400)
+            if accessType == "permanent" then
+                expiresAt = nil
+            else
+                expiresAt = os.time() + 86400
+            end
             saveKey(key, accessType, expiresAt)
             status.Text = decoded.type == "permanent"
                 and "PERMANENT KEY VERIFIED"
