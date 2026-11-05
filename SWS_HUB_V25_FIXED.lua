@@ -30,6 +30,7 @@ local verified = false
 local accessType
 local expiresAt
 local cachedKey
+local cachedStatus
 local GlobalCache
 local CacheData
 
@@ -92,7 +93,8 @@ local function verifyWithServer(key)
     local parsed = pcall(function()
         decoded = HttpService:JSONDecode(response.Body or "")
     end)
-    if not parsed or type(decoded) ~= "table" or decoded.valid ~= true then return false end
+    if not parsed or type(decoded) ~= "table" then return false end
+    if decoded.valid ~= true then return false, decoded end
     return true, decoded
 end
 
@@ -108,11 +110,19 @@ if type(cachedKey) == "string" and cachedKey ~= "" then
         end
         saveKey(cachedKey, accessType, expiresAt)
     else
-        cachedKey, expiresAt, accessType = nil, nil, nil
-        if type(delfile) == "function" then
-            pcall(function()
-                if isfile(CacheFile) then delfile(CacheFile) end
-            end)
+        if decoded then
+            cachedStatus = "KEY EXPIRED / INVALID"
+            cachedKey, expiresAt, accessType = nil, nil, nil
+            if GlobalCache then
+                GlobalCache.SWS_HUB_KEY_CACHE = nil
+            end
+            if type(delfile) == "function" then
+                pcall(function()
+                    delfile(CacheFile)
+                end)
+            end
+        else
+            cachedStatus = "SERVER CHECK FAILED - RETRY"
         end
     end
 end
@@ -209,8 +219,8 @@ local status = Instance.new("TextLabel")
 status.Size = UDim2.new(1, -30, 0, 30)
 status.Position = UDim2.fromOffset(15, 170)
 status.BackgroundTransparency = 1
-status.Text = "STATUS: WAITING FOR KEY"
-status.TextColor3 = Color3.fromRGB(155, 155, 165)
+status.Text = cachedStatus or "STATUS: WAITING FOR KEY"
+status.TextColor3 = cachedStatus and Color3.fromRGB(235, 125, 125) or Color3.fromRGB(155, 155, 165)
 status.TextSize = 10
 status.Font = Enum.Font.GothamBold
 status.Parent = main
